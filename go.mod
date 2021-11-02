@@ -1,9 +1,9 @@
-module github.com/dylanratcliffe/sdpcache
+module github.com/overmindtech/sdpcache
 
 go 1.17
 
 require (
-	github.com/dylanratcliffe/sdp-go v0.0.0-20211006154629-54e1a4d9b8ce
+	github.com/overmindtech/sdp-go v0.0.0-20211102150011-c5655900616d
 	github.com/sirupsen/logrus v1.8.1
 	google.golang.org/protobuf v1.27.1
 )
