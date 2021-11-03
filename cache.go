@@ -304,7 +304,7 @@ func (c *Cache) Purge() PurgeStats {
 	// Create the slice
 	newStorage = make([]CachedResult, 0)
 
-	c.storageMutex.RLock()
+	c.storageMutex.Lock()
 
 	if len(c.Storage) > 0 {
 		// Set the shortest to a very high value
@@ -329,10 +329,8 @@ func (c *Cache) Purge() PurgeStats {
 			numPurged++
 		}
 	}
-	c.storageMutex.RUnlock()
 
 	// Replace the old storage with the new storage
-	c.storageMutex.Lock()
 	c.Storage = newStorage
 	c.storageMutex.Unlock()
 
