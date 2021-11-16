@@ -105,18 +105,18 @@ func (c *Cache) StoreItem(item *sdp.Item, duration time.Duration, tags Tags) {
 
 	allTags = addDefaultItemTags(item, tags)
 
+	// Lock to ensure thread safety
+	c.storageMutex.Lock()
+	defer c.storageMutex.Unlock()
+
 	// Ensure that the item hasn't already been stored in the cache
-	_, err = c.Search(allTags)
+	_, err = c.unsafeSearch(allTags)
 
 	if err == nil {
 		// If the item is already in the cache then delete it since we have a
 		// new version
-		c.Delete(allTags)
+		c.unsafeDelete(allTags)
 	}
-
-	// Lock to ensure thread safety
-	c.storageMutex.Lock()
-	defer c.storageMutex.Unlock()
 
 	// Clone the item for storage
 	item.Copy(&itemCopy)
@@ -145,14 +145,14 @@ func (c *Cache) BulkStoreItem(items []*sdp.Item, duration time.Duration, tags Ta
 //   isError: true
 //
 func (c *Cache) StoreError(err error, duration time.Duration, tags Tags) {
-	// Ensure that the error hasn't already been stored in the cache. Since
-	// error uniqueness isn't determined in any good way we will use the tags
-	// passed in here
-	c.Delete(addDefaultErrorTags(err, tags))
-
 	// Lock to ensure thread safety
 	c.storageMutex.Lock()
 	defer c.storageMutex.Unlock()
+
+	// Ensure that the error hasn't already been stored in the cache. Since
+	// error uniqueness isn't determined in any good way we will use the tags
+	// passed in here
+	c.unsafeDelete(addDefaultErrorTags(err, tags))
 
 	si := CachedResult{
 		Item:          &sdp.Item{},
@@ -172,6 +172,14 @@ func (c *Cache) Search(searchTags Tags) ([]*sdp.Item, error) {
 	c.storageMutex.RLock()
 	defer c.storageMutex.RUnlock()
 
+	// Call unsafeSearch, but within the read lock that we just acquired
+	return c.unsafeSearch(searchTags)
+}
+
+// unsafeSearch Is the backend search method, but does not handle locking of the
+// storage. Only use this method when you are handing the locking in a higher
+// layer to avoid race conditions
+func (c *Cache) unsafeSearch(searchTags Tags) ([]*sdp.Item, error) {
 	results := make([]*sdp.Item, 0)
 
 	for _, r := range c.Storage {
@@ -203,10 +211,17 @@ func (c *Cache) Search(searchTags Tags) ([]*sdp.Item, error) {
 
 // Delete Removes items form the cache that have matching tags
 func (c *Cache) Delete(searchTags Tags) error {
-	newStorage := make([]CachedResult, 0)
-
 	c.storageMutex.Lock()
 	defer c.storageMutex.Unlock()
+
+	// Use a write lock, then call the unsafe method
+	return c.unsafeDelete(searchTags)
+}
+
+// unsafeDelete Deletes a set if items from the cache using tags, but without
+// locking. When using this function you need to handle the locking yourself
+func (c *Cache) unsafeDelete(searchTags Tags) error {
+	newStorage := make([]CachedResult, 0)
 
 	for _, r := range c.Storage {
 		if !r.HasTags(searchTags) {
