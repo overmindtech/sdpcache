@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"sync"
 	"testing"
 	"time"
 
@@ -441,6 +442,60 @@ func TestUpdating(t *testing.T) {
 				t.Error("Could not find item cached with searchTags")
 			}
 		}
+	}
+}
+
+// We need to ensure that doing parallel actions doesn't cause race-condition
+// related issues. This test will cover trying to insert many items at once
+func TestParallelUpdate(t *testing.T) {
+	c := Cache{
+		Name:        "errors",
+		MinWaitTime: 1 * time.Millisecond,
+	}
+
+	wg := sync.WaitGroup{}
+
+	// Run StoreItem 1000 times in parallel. This might seem like a lot but
+	// since the operation is so fast, we need to run it a lot of times to make
+	// sure that it has a good chance of actually encountering a race condition
+	for i := 0; i < 1000; i++ {
+		wg.Add(1)
+		go func() {
+			c.StoreItem(goodItem, cacheDuration, goodTags)
+			wg.Done()
+		}()
+	}
+
+	wg.Wait()
+
+	if len(c.Storage) > 1 {
+		t.Errorf("Item has been cached %v times, expected once", len(c.Storage))
+	}
+
+}
+
+// Inserting many errors in parallel
+func TestParallelErrors(t *testing.T) {
+	c := Cache{
+		Name:        "errors",
+		MinWaitTime: 1 * time.Millisecond,
+	}
+
+	wg := sync.WaitGroup{}
+	err := errors.New("one")
+
+	for i := 0; i < 1000; i++ {
+		wg.Add(1)
+		go func() {
+			c.StoreError(err, cacheDuration, goodTags)
+			wg.Done()
+		}()
+	}
+
+	wg.Wait()
+
+	if len(c.Storage) > 1 {
+		t.Errorf("Item has been cached %v times, expected once", len(c.Storage))
 	}
 }
 
