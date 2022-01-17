@@ -235,6 +235,13 @@ func (c *Cache) unsafeDelete(searchTags Tags) error {
 	return CacheNotFoundError(searchTags)
 }
 
+// Clear Clears all items from the cache
+func (c *Cache) Clear() {
+	c.storageMutex.Lock()
+	c.Storage = make([]CachedResult, 0)
+	c.storageMutex.Unlock()
+}
+
 // GetMinWaitTime Returns the minimum wait time or the default if not set
 func (c *Cache) GetMinWaitTime() time.Duration {
 	if c.MinWaitTime == 0 {

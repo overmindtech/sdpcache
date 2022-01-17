@@ -640,6 +640,44 @@ func TestItemPointerDuplication(t *testing.T) {
 	})
 }
 
+func TestClearCache(t *testing.T) {
+	var results []*sdp.Item
+	var err error
+
+	c := Cache{
+		Name:        "errors",
+		MinWaitTime: 1 * time.Millisecond,
+	}
+
+	// Cache an item
+	c.StoreItem(goodItem, cacheDuration, goodTags)
+
+	// Check to see what we get
+	results, err = c.Search(goodTags)
+
+	if len(results) != 1 {
+		t.Errorf("Found %v results, expected 1. Storing an item must have failed", len(results))
+	}
+
+	if err != nil {
+		t.Error("Error should be nil when items were found")
+	}
+
+	// Delete the item
+	c.Clear()
+
+	// Check to see what we get
+	results, err = c.Search(goodTags)
+
+	if len(results) != 0 {
+		t.Errorf("Found %v results, expected 0. Deleting an item must have failed", len(results))
+	}
+
+	if err == nil {
+		t.Error("Error should not be nil when no items were found")
+	}
+}
+
 func expectNumItem(results []*sdp.Item, err error, t *testing.T, numExpected int, searchTags Tags) {
 	if err != nil {
 		t.Errorf("Got error when searching for an item using the supplied tags %v", searchTags)
