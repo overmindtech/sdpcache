@@ -687,3 +687,45 @@ func expectNumItem(results []*sdp.Item, err error, t *testing.T, numExpected int
 		t.Errorf("Expected %v result, got %v: %v", numExpected, len(results), results)
 	}
 }
+
+func TestStopPurging(t *testing.T) {
+	c := Cache{
+		Name:        "errors",
+		MinWaitTime: 1 * time.Millisecond,
+	}
+
+	c.StartPurger()
+
+	// Cache an item
+	c.StoreItem(goodItem, cacheDuration, goodTags)
+
+	// Check to see that we get an item
+	_, err := c.Search(goodTags)
+
+	if err != nil {
+		t.Error("Error should be nil when items were found")
+	}
+
+	time.Sleep(cacheDuration * 2)
+
+	// Check to see what we get
+	_, err = c.Search(goodTags)
+
+	if err == nil {
+		t.Error("Error should not be nil when no items were found")
+	}
+
+	c.StopPurger()
+
+	c.StoreItem(goodItem, cacheDuration, goodTags)
+
+	time.Sleep(cacheDuration * 2)
+
+	// Check to see that we get an item
+	_, err = c.Search(goodTags)
+
+	if err != nil {
+		t.Error("Error should be nil when items were found")
+	}
+
+}

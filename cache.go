@@ -27,6 +27,7 @@ type Cache struct {
 
 	// Mutexes that are used to ensure thread safety of the underlying storage
 	storageMutex sync.RWMutex
+	killChan     chan bool
 }
 
 // Tags A map of key-value pairs that can be searched on
@@ -375,6 +376,10 @@ func (c *Cache) Purge() PurgeStats {
 
 // StartPurger Starts the automatic purging of the cache
 func (c *Cache) StartPurger() {
+	if c.killChan == nil {
+		c.killChan = make(chan bool)
+	}
+
 	go func() {
 		// We want this process to be efficient with how often it runs. To this end
 		// we will make sure that it is able to dynamically increase and decrease
@@ -387,31 +392,41 @@ func (c *Cache) StartPurger() {
 		for {
 			var sleepTime time.Duration
 
-			stats := c.Purge()
+			select {
+			case <-time.After(sleepTime):
+				stats := c.Purge()
 
-			// If the shortest cache time is zero this means that there is
-			// nothing left in the cache. In this cache we want to still sleep
-			// otherwise we would end up looping like crazy
-			if stats.ShortestCacheRemaining != 0 {
-				sleepTime = stats.ShortestCacheRemaining / 10
+				// If the shortest cache time is zero this means that there is
+				// nothing left in the cache. In this cache we want to still sleep
+				// otherwise we would end up looping like crazy
+				if stats.ShortestCacheRemaining != 0 {
+					sleepTime = stats.ShortestCacheRemaining / 10
 
-				// Check that we aren't below the minimum wait time
-				if sleepTime < c.GetMinWaitTime() {
+					// Check that we aren't below the minimum wait time
+					if sleepTime < c.GetMinWaitTime() {
+						sleepTime = c.GetMinWaitTime()
+					}
+				} else {
 					sleepTime = c.GetMinWaitTime()
 				}
-			} else {
-				sleepTime = c.GetMinWaitTime()
-			}
 
-			if stats.NumPurged > 0 {
-				log.WithFields(log.Fields{
-					"numPurged":              stats.NumPurged,
-					"timeTaken":              stats.TimeTaken,
-					"shortestCacheRemaining": stats.ShortestCacheRemaining,
-				}).Tracef("Finished %v cache purge, next purge in %v", c.Name, sleepTime)
+				if stats.NumPurged > 0 {
+					log.WithFields(log.Fields{
+						"numPurged":              stats.NumPurged,
+						"timeTaken":              stats.TimeTaken,
+						"shortestCacheRemaining": stats.ShortestCacheRemaining,
+					}).Tracef("Finished %v cache purge, next purge in %v", c.Name, sleepTime)
+				}
+			case <-c.killChan:
+				return
 			}
-
-			time.Sleep(sleepTime)
 		}
 	}()
+}
+
+// StopPurger Stops the cache purging goroutine
+func (c *Cache) StopPurger() {
+	if c.killChan != nil {
+		c.killChan <- true
+	}
 }
