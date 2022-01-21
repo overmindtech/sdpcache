@@ -1,6 +1,7 @@
 package sdpcache
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"strings"
@@ -27,7 +28,8 @@ type Cache struct {
 
 	// Mutexes that are used to ensure thread safety of the underlying storage
 	storageMutex sync.RWMutex
-	killChan     chan bool
+	context      context.Context
+	cancel       context.CancelFunc
 }
 
 // Tags A map of key-value pairs that can be searched on
@@ -376,11 +378,11 @@ func (c *Cache) Purge() PurgeStats {
 
 // StartPurger Starts the automatic purging of the cache
 func (c *Cache) StartPurger() {
-	if c.killChan == nil {
-		c.killChan = make(chan bool)
-	}
+	c.context, c.cancel = context.WithCancel(context.Background())
 
 	go func() {
+		var sleepTime time.Duration
+
 		// We want this process to be efficient with how often it runs. To this end
 		// we will make sure that it is able to dynamically increase and decrease
 		// its frequency depending on the duration of the caches. The logic we will
@@ -390,10 +392,10 @@ func (c *Cache) StartPurger() {
 		// however this item is removed and the rest of the items are to be cached
 		// for 10 minutes, the Purger will revert to running every minute
 		for {
-			var sleepTime time.Duration
+			timer := time.NewTimer(sleepTime)
 
 			select {
-			case <-time.After(sleepTime):
+			case <-timer.C:
 				stats := c.Purge()
 
 				// If the shortest cache time is zero this means that there is
@@ -417,7 +419,8 @@ func (c *Cache) StartPurger() {
 						"shortestCacheRemaining": stats.ShortestCacheRemaining,
 					}).Tracef("Finished %v cache purge, next purge in %v", c.Name, sleepTime)
 				}
-			case <-c.killChan:
+			case <-c.context.Done():
+				timer.Stop()
 				return
 			}
 		}
@@ -426,7 +429,7 @@ func (c *Cache) StartPurger() {
 
 // StopPurger Stops the cache purging goroutine
 func (c *Cache) StopPurger() {
-	if c.killChan != nil {
-		c.killChan <- true
+	if c.cancel != nil {
+		c.cancel()
 	}
 }
