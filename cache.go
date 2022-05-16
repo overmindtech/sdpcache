@@ -103,7 +103,6 @@ type CacheNotFoundError Tags
 //
 func (c *Cache) StoreItem(item *sdp.Item, duration time.Duration, tags Tags) {
 	var allTags Tags
-	var err error
 	var itemCopy sdp.Item
 
 	allTags = addDefaultItemTags(item, tags)
@@ -112,10 +111,7 @@ func (c *Cache) StoreItem(item *sdp.Item, duration time.Duration, tags Tags) {
 	c.storageMutex.Lock()
 	defer c.storageMutex.Unlock()
 
-	// Ensure that the item hasn't already been stored in the cache
-	_, err = c.unsafeSearch(allTags)
-
-	if err == nil {
+	if c.unsafeExists(allTags) {
 		// If the item is already in the cache then delete it since we have a
 		// new version
 		c.unsafeDelete(allTags)
@@ -210,6 +206,18 @@ func (c *Cache) unsafeSearch(searchTags Tags) ([]*sdp.Item, error) {
 	}
 
 	return results, nil
+}
+
+// unsafeExists Returns whether or not anything exists with the given tags, does
+// not handle storage locking
+func (c *Cache) unsafeExists(searchTags Tags) bool {
+	for _, r := range c.Storage {
+		if r.HasTags(searchTags) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // Delete Removes items form the cache that have matching tags
