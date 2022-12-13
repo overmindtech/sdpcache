@@ -29,7 +29,7 @@ var goodAttributes, _ = sdp.ToAttributes(map[string]interface{}{
 })
 
 var goodItem = &sdp.Item{
-	Context:    "home",
+	Scope:      "home",
 	Attributes: goodAttributes,
 	LinkedItemRequests: []*sdp.ItemRequest{
 		{
@@ -49,7 +49,7 @@ var goodItem = &sdp.Item{
 			Method:          sdp.RequestMethod_GET,
 			Query:           "1234",
 			LinkDepth:       1,
-			Context:         "testContext",
+			Scope:           "testScope",
 			ItemSubject:     "items",
 			ResponseSubject: "responses",
 		},
@@ -59,7 +59,7 @@ var goodItem = &sdp.Item{
 		{
 			Type:                 "furniture",
 			UniqueAttributeValue: "linked",
-			Context:              "home",
+			Scope:                "home",
 		},
 	},
 }
@@ -212,7 +212,7 @@ func TestAutoTagging(t *testing.T) {
 		// Note the expected automatic tags for an item
 		autoTags := Tags{
 			"type":                 goodItem.Type,
-			"context":              goodItem.Context,
+			"scope":                goodItem.Scope,
 			"uniqueAttributeValue": fmt.Sprint(goodItem.UniqueAttributeValue()),
 		}
 
@@ -386,7 +386,7 @@ func TestBadDeletions(t *testing.T) {
 }
 
 // We need to be sure that if an item was found in many different ways that this
-// is handled correctly. An example could be if an item was found using a FIND,
+// is handled correctly. An example could be if an item was found using a LIST,
 // then again using a SEARCH. If the new item was to simply overwrite the old,
 // it would mean that if a user re-requested the find they would get s different
 // number of results since one of the results would have had its tags removed
@@ -532,12 +532,12 @@ func TestItemPointerDuplication(t *testing.T) {
 
 		// Metadata
 		goodItem.Metadata.SourceName = "modified"
-		goodItem.Metadata.SourceRequest.Context = "modified"
+		goodItem.Metadata.SourceRequest.Scope = "modified"
 		goodItem.Metadata.SourceRequest.Method = sdp.RequestMethod_SEARCH
 		goodItem.Metadata.Timestamp = timestamppb.New(time.Unix(0, 0))
 		goodItem.Metadata.SourceDuration = durationpb.New(10 * time.Second)
 		goodItem.Metadata.SourceDurationPerItem = durationpb.New(10 * time.Second)
-		goodItem.Context = "modified"
+		goodItem.Scope = "modified"
 
 		// Links
 		expectedLinkedItemRequests = len(goodItem.LinkedItemRequests)
@@ -546,20 +546,20 @@ func TestItemPointerDuplication(t *testing.T) {
 		// Append to make sure the slice is being copied by value
 		goodItem.LinkedItemRequests = append(goodItem.LinkedItemRequests, &sdp.ItemRequest{
 			Type:      "modified",
-			Method:    sdp.RequestMethod_FIND,
+			Method:    sdp.RequestMethod_LIST,
 			Query:     "modified",
 			LinkDepth: 2,
-			Context:   "modified",
+			Scope:     "modified",
 		})
 		// Modify an existing item to ensure that they are being cloned deeply
-		goodItem.LinkedItemRequests[0].Context = "modified"
+		goodItem.LinkedItemRequests[0].Scope = "modified"
 
 		goodItem.LinkedItems = append(goodItem.LinkedItems, &sdp.Reference{
 			Type:                 "modified",
 			UniqueAttributeValue: "modified",
-			Context:              "modifed",
+			Scope:                "modifed",
 		})
-		goodItem.LinkedItems[0].Context = "modified"
+		goodItem.LinkedItems[0].Scope = "modified"
 	})
 
 	t.Run("Check that the cached item has not been modified", func(t *testing.T) {
@@ -597,8 +597,8 @@ func TestItemPointerDuplication(t *testing.T) {
 			if cachedItem.GetMetadata().GetSourceName() == "modified" {
 				t.Error("Item Metadata SourceName was modififed")
 			}
-			if cachedItem.GetMetadata().GetSourceRequest().GetContext() != "testContext" {
-				t.Error("Item Metadata SourceRequest Context was modififed")
+			if cachedItem.GetMetadata().GetSourceRequest().GetScope() != "testScope" {
+				t.Error("Item Metadata SourceRequest Scope was modififed")
 			}
 			if cachedItem.GetMetadata().GetSourceRequest().GetMethod() != sdp.RequestMethod_GET {
 				t.Error("Item Metadata SourceRequest Method was modififed")
@@ -614,9 +614,9 @@ func TestItemPointerDuplication(t *testing.T) {
 			}
 
 		})
-		t.Run("Check Context", func(t *testing.T) {
-			if cachedItem.GetContext() == "modified" {
-				t.Error("Context was modified")
+		t.Run("Check Scope", func(t *testing.T) {
+			if cachedItem.GetScope() == "modified" {
+				t.Error("Scope was modified")
 			}
 		})
 		t.Run("Check LinkedItemRequests", func(t *testing.T) {
@@ -624,7 +624,7 @@ func TestItemPointerDuplication(t *testing.T) {
 				t.Error("LinkedItemRequests was modified by adding a value to the slice")
 			}
 
-			if cachedItem.LinkedItemRequests[0].Context == "modified" {
+			if cachedItem.LinkedItemRequests[0].Scope == "modified" {
 				t.Error("LinkedItemRequests was modified by changing an existing value")
 			}
 		})
@@ -633,7 +633,7 @@ func TestItemPointerDuplication(t *testing.T) {
 				t.Error("LinkedItems was modified by adding a value to the slice")
 			}
 
-			if cachedItem.LinkedItems[0].Context == "modified" {
+			if cachedItem.LinkedItems[0].Scope == "modified" {
 				t.Error("LinkedItems was modified by changing an existing value")
 			}
 		})
