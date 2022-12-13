@@ -16,7 +16,6 @@ import (
 const MinWaitDefault = (5 * time.Second)
 
 // Cache is responsible for caching data between calls
-//
 type Cache struct {
 	// Name used for logging since there are many caches
 	Name    string
@@ -95,12 +94,12 @@ type CacheNotFoundError Tags
 // StoreItem Store an item in the cache.
 //
 // Note that all stored items will have the following default tags applied:
-//   type: (item.Type)
-//   context: (item.Context)
-//   uniqueAttributeValue: (item.Attributes[item.UniqueAttribute])
+//
+//	type: (item.Type)
+//	scope: (item.Scope)
+//	uniqueAttributeValue: (item.Attributes[item.UniqueAttribute])
 //
 // These default tags mean that each full tag set will be unique to an item
-//
 func (c *Cache) StoreItem(item *sdp.Item, duration time.Duration, tags Tags) {
 	var allTags Tags
 	var itemCopy sdp.Item
@@ -141,8 +140,8 @@ func (c *Cache) BulkStoreItem(items []*sdp.Item, duration time.Duration, tags Ta
 // StoreError Store an item in the cache.
 //
 // Note that all errors will get the following tags by default:
-//   isError: true
 //
+//	isError: true
 func (c *Cache) StoreError(err error, duration time.Duration, tags Tags) {
 	// Lock to ensure thread safety
 	c.storageMutex.Lock()
@@ -266,7 +265,7 @@ func (c *Cache) GetMinWaitTime() time.Duration {
 func DefaultItemTags(item *sdp.Item) Tags {
 	return Tags{
 		"type":                 item.Type,
-		"context":              item.Context,
+		"scope":                item.Scope,
 		"uniqueAttributeValue": item.UniqueAttributeValue(),
 	}
 }
