@@ -34,7 +34,7 @@ type Cache struct {
 // Tags A map of key-value pairs that can be searched on
 type Tags map[string]string
 
-// CachedResult An itemincluding cache metadata
+// CachedResult An item including cache metadata
 type CachedResult struct {
 	// Item is the actual cached item
 	Item *sdp.Item
@@ -45,7 +45,7 @@ type CachedResult struct {
 	// CacheDuration How long to cache the item for
 	CacheDuration time.Duration
 
-	// InterstTime When the item was inserted into the cache
+	// InsertTime When the item was inserted into the cache
 	InsertTime time.Time
 
 	// Tags are arbitrary strings maps that can be searched on

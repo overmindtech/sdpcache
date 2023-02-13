@@ -40,6 +40,8 @@ func BenchmarkCache1SingleItem(b *testing.B) {
 
 	var err error
 
+	b.ResetTimer()
+
 	for i := 0; i < b.N; i++ {
 		// Search for a single item
 		_, err = c.Search(tags)
@@ -54,6 +56,8 @@ func BenchmarkCache10SingleItem(b *testing.B) {
 	c, tags := NewPopulatedCache(b.Name(), 10)
 
 	var err error
+
+	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
 		// Search for a single item
@@ -70,6 +74,8 @@ func BenchmarkCache100SingleItem(b *testing.B) {
 
 	var err error
 
+	b.ResetTimer()
+
 	for i := 0; i < b.N; i++ {
 		// Search for a single item
 		_, err = c.Search(tags)
@@ -84,6 +90,8 @@ func BenchmarkCache1000SingleItem(b *testing.B) {
 	c, tags := NewPopulatedCache(b.Name(), 1000)
 
 	var err error
+
+	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
 		// Search for a single item
@@ -104,6 +112,8 @@ func BenchmarkCache1AllItem(b *testing.B) {
 
 	var err error
 
+	b.ResetTimer()
+
 	for i := 0; i < b.N; i++ {
 		// Search for all items
 		_, err = c.Search(AllItemTags)
@@ -118,6 +128,8 @@ func BenchmarkCache10AllItem(b *testing.B) {
 	c, _ := NewPopulatedCache(b.Name(), 10)
 
 	var err error
+
+	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
 		// Search for all items
@@ -134,6 +146,8 @@ func BenchmarkCache100AllItem(b *testing.B) {
 
 	var err error
 
+	b.ResetTimer()
+
 	for i := 0; i < b.N; i++ {
 		// Search for all items
 		_, err = c.Search(AllItemTags)
@@ -148,6 +162,8 @@ func BenchmarkCache1000AllItem(b *testing.B) {
 	c, _ := NewPopulatedCache(b.Name(), 1000)
 
 	var err error
+
+	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
 		// Search for all items
@@ -172,6 +188,8 @@ func BenchmarkCache1AllItemManyTags(b *testing.B) {
 
 	var err error
 
+	b.ResetTimer()
+
 	for i := 0; i < b.N; i++ {
 		// Search for all items
 		_, err = c.Search(ManyTags)
@@ -186,6 +204,8 @@ func BenchmarkCache10AllItemManyTags(b *testing.B) {
 	c, _ := NewPopulatedCache(b.Name(), 10)
 
 	var err error
+
+	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
 		// Search for all items
@@ -202,6 +222,8 @@ func BenchmarkCache100AllItemManyTags(b *testing.B) {
 
 	var err error
 
+	b.ResetTimer()
+
 	for i := 0; i < b.N; i++ {
 		// Search for all items
 		_, err = c.Search(ManyTags)
@@ -216,6 +238,8 @@ func BenchmarkCache1000AllItemManyTags(b *testing.B) {
 	c, _ := NewPopulatedCache(b.Name(), 1000)
 
 	var err error
+
+	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
 		// Search for all items
