@@ -3,6 +3,7 @@ package v2
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -93,6 +94,36 @@ func TestStoreError(t *testing.T) {
 			},
 			Method: &item.Metadata.SourceRequest.Method,
 			Query:  &item.Metadata.SourceRequest.Query,
+		})
+
+		if len(items) > 0 {
+			t.Errorf("expected 0 items, got %v", len(items))
+		}
+
+		if err == nil {
+			t.Error("expected error, got nil")
+		}
+	})
+
+	t.Run("with multiple errors", func(t *testing.T) {
+		sst := SST{
+			SourceName: "foo",
+			Scope:      "foo",
+			Type:       "foo",
+		}
+
+		uav := "foo"
+
+		cache.StoreError(errors.New("nope"), 10*time.Second, IndexValues{
+			SSTHash: sst.Hash(),
+			Method:  sdp.RequestMethod_GET,
+			Query:   uav,
+		})
+
+		items, err := cache.Search(CacheQuery{
+			SST:    sst,
+			Method: sdp.RequestMethod_GET.Enum(),
+			Query:  &uav,
 		})
 
 		if len(items) > 0 {
@@ -252,17 +283,7 @@ func TestStartPurge(t *testing.T) {
 
 	// At this point everything should be been cleaned, and the purger should be
 	// sleeping forever
-	uav := cachedItems[1].Item.UniqueAttributeValue()
-	items, err := cache.Search(CacheQuery{
-		SST: SST{
-			SourceName: cachedItems[1].Item.Metadata.SourceName,
-			Scope:      cachedItems[1].Item.Scope,
-			Type:       cachedItems[1].Item.Type,
-		},
-		UniqueAttributeValue: &uav,
-		Method:               &cachedItems[1].Item.Metadata.SourceRequest.Method,
-		Query:                &cachedItems[1].Item.Metadata.SourceRequest.Query,
-	})
+	items, err := cache.Search(ToCacheQuery(cachedItems[1].Item))
 
 	if !errors.Is(err, ErrCacheNotFound) {
 		t.Errorf("unexpected error: %v", err)
@@ -277,21 +298,149 @@ func TestStartPurge(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	// It should be empty again
-	items, err = cache.Search(CacheQuery{
-		SST: SST{
-			SourceName: cachedItems[1].Item.Metadata.SourceName,
-			Scope:      cachedItems[1].Item.Scope,
-			Type:       cachedItems[1].Item.Type,
-		},
-		UniqueAttributeValue: &uav,
-		Method:               &cachedItems[1].Item.Metadata.SourceRequest.Method,
-		Query:                &cachedItems[1].Item.Metadata.SourceRequest.Query,
-	})
+	items, err = cache.Search(ToCacheQuery(cachedItems[1].Item))
 
 	if !errors.Is(err, ErrCacheNotFound) {
 		t.Errorf("unexpected error: %v", err)
 		t.Errorf("unexpected items: %v", len(items))
 	}
+}
 
-	// time.Sleep(time.Hour)
+func TestStopPurge(t *testing.T) {
+	cache := NewCache()
+	cache.MinWaitTime = 1 * time.Millisecond
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	cache.StartPurger(ctx)
+
+	// Stop the purger
+	cancel()
+
+	// Insert an item
+	item := GenerateRandomItem()
+	cache.StoreItem(item, time.Millisecond)
+	sst := SST{
+		SourceName: item.Metadata.SourceName,
+		Scope:      item.Scope,
+		Type:       item.Type,
+	}
+
+	// Make sure it's not purged
+	time.Sleep(100 * time.Millisecond)
+	items, err := cache.Search(CacheQuery{
+		SST: sst,
+	})
+
+	if err != nil {
+		t.Error(err)
+	}
+
+	if len(items) != 1 {
+		t.Errorf("Expected 1 item, got %v", len(items))
+	}
+}
+
+func TestDelete(t *testing.T) {
+	cache := NewCache()
+
+	// Insert an item
+	item := GenerateRandomItem()
+	cache.StoreItem(item, time.Millisecond)
+	sst := SST{
+		SourceName: item.Metadata.SourceName,
+		Scope:      item.Scope,
+		Type:       item.Type,
+	}
+
+	// It should be there
+	items, err := cache.Search(CacheQuery{
+		SST: sst,
+	})
+
+	if err != nil {
+		t.Error(err)
+	}
+
+	if len(items) != 1 {
+		t.Errorf("expected 1 item, got %v", len(items))
+	}
+
+	// Delete it
+	cache.Delete(CacheQuery{
+		SST: sst,
+	})
+
+	// It should be gone
+	items, err = cache.Search(CacheQuery{
+		SST: sst,
+	})
+
+	if err != ErrCacheNotFound {
+		t.Errorf("expected ErrCacheNotFound, got %v", err)
+	}
+
+	if len(items) != 0 {
+		t.Errorf("expected 0 item, got %v", len(items))
+	}
+}
+
+// This test is designed to be run with -race to ensure that there aren't any
+// data races
+func TestConcurrent(t *testing.T) {
+	cache := NewCache()
+	// Run the purger super fast to generate a worst-case scenario
+	cache.MinWaitTime = 1 * time.Millisecond
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cache.StartPurger(ctx)
+
+	var wg sync.WaitGroup
+
+	numParallel := 1_000
+
+	for i := 0; i < numParallel; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// Store the item
+			item := GenerateRandomItem()
+			cache.StoreItem(item, 100*time.Millisecond)
+
+			wg.Add(1)
+			// Create a goroutine to also delete in parallel
+			go func() {
+				defer wg.Done()
+				cache.Delete(ToCacheQuery(item))
+			}()
+		}()
+	}
+
+	wg.Wait()
+}
+
+func TestPointers(t *testing.T) {
+	cache := NewCache()
+
+	item := GenerateRandomItem()
+
+	cache.StoreItem(item, time.Minute)
+	cq := ToCacheQuery(item)
+
+	item.Type = "bad"
+
+	items, err := cache.Search(cq)
+
+	if err != nil {
+		t.Error(err)
+	}
+
+	if len(items) != 1 {
+		t.Errorf("expected 1 item, got %v", len(items))
+	}
+
+	if items[0].Type == "bad" {
+		t.Error("item was changed in cache")
+	}
 }

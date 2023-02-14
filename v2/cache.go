@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/btree"
@@ -133,6 +134,13 @@ type Cache struct {
 	// to a slice or something. The purge process uses this to determine what
 	// needs deleting, then calls into each specific index to delete as required
 	expiryIndex *btree.BTreeG[*CachedResult]
+
+	// Mutex for reading caches
+	indexMutex sync.RWMutex
+
+	// Ensures that purge stats like `purgeTimer` and `nextPurge` aren't being
+	// modified concurrently
+	purgeMutex sync.Mutex
 }
 
 func NewCache() *Cache {
@@ -170,7 +178,46 @@ func newIndexSet() *indexSet {
 // query parameters
 func (c *Cache) Search(cc CacheQuery) ([]*sdp.Item, error) {
 	items := make([]*sdp.Item, 0)
-	var err error
+
+	results := c.getResults(cc)
+
+	if len(results) == 0 {
+		return nil, ErrCacheNotFound
+	}
+
+	// If there is an error we want to return that, so we need to range over the
+	// results and separate items and errors. This is computationally less
+	// efficient than extracting errors inside of `getResults()` but logically
+	// it's a lot less complicated since `Delete()` uses the same method but
+	// applies different logic
+	for _, res := range results {
+		if res.Error != nil {
+			return nil, res.Error
+		}
+
+		// Return a copy of the item so the user can do whatever they want with
+		// it
+		itemCopy := sdp.Item{}
+		res.Item.Copy(&itemCopy)
+
+		items = append(items, &itemCopy)
+	}
+
+	return items, nil
+}
+
+// Delete Deletes anything that matches the given cache query
+func (c *Cache) Delete(cc CacheQuery) {
+	c.deleteResults(c.getResults(cc))
+}
+
+// getResults Searches indexes for cached results, doing no other logic. If
+// nothing is found an empty slice will be returned.
+func (c *Cache) getResults(cc CacheQuery) []*CachedResult {
+	c.indexMutex.RLock()
+	defer c.indexMutex.RUnlock()
+
+	results := make([]*CachedResult, 0)
 
 	// Get the relevant set of indexes based on the SST Hash
 	sstHash := cc.SST.Hash()
@@ -183,7 +230,7 @@ func (c *Cache) Search(cc CacheQuery) ([]*sdp.Item, error) {
 
 	if !exists {
 		// If we don't have a set of indexes then it definitely doesn't exist
-		return items, ErrCacheNotFound
+		return results
 	}
 
 	// Start with the most specific index and fall back to the least specific.
@@ -195,13 +242,7 @@ func (c *Cache) Search(cc CacheQuery) ([]*sdp.Item, error) {
 		indexes.uniqueAttributeValueIndex.AscendGreaterOrEqual(&pivot, func(result *CachedResult) bool {
 			if *cc.UniqueAttributeValue == result.IndexValues.UniqueAttributeValue {
 				if cc.Matches(result.IndexValues) {
-					if result.Error != nil {
-						err = result.Error
-					}
-
-					if result.Item != nil {
-						items = append(items, result.Item)
-					}
+					results = append(results, result)
 				}
 
 				// Always return true so that we continue to iterate
@@ -211,11 +252,7 @@ func (c *Cache) Search(cc CacheQuery) ([]*sdp.Item, error) {
 			return false
 		})
 
-		if len(items) == 0 {
-			return nil, ErrCacheNotFound
-		}
-
-		return items, err
+		return results
 	}
 
 	if cc.Query != nil {
@@ -224,13 +261,7 @@ func (c *Cache) Search(cc CacheQuery) ([]*sdp.Item, error) {
 		indexes.queryIndex.AscendGreaterOrEqual(&pivot, func(result *CachedResult) bool {
 			if *cc.Query == result.IndexValues.Query {
 				if cc.Matches(result.IndexValues) {
-					if result.Error != nil {
-						err = result.Error
-					}
-
-					if result.Item != nil {
-						items = append(items, result.Item)
-					}
+					results = append(results, result)
 				}
 
 				// Always return true so that we continue to iterate
@@ -240,11 +271,7 @@ func (c *Cache) Search(cc CacheQuery) ([]*sdp.Item, error) {
 			return false
 		})
 
-		if len(items) == 0 {
-			return nil, ErrCacheNotFound
-		}
-
-		return items, err
+		return results
 	}
 
 	if cc.Method != nil {
@@ -254,13 +281,7 @@ func (c *Cache) Search(cc CacheQuery) ([]*sdp.Item, error) {
 			if *cc.Method == result.IndexValues.Method {
 				// If the methods match, check the rest
 				if cc.Matches(result.IndexValues) {
-					if result.Error != nil {
-						err = result.Error
-					}
-
-					if result.Item != nil {
-						items = append(items, result.Item)
-					}
+					results = append(results, result)
 				}
 
 				// Always return true so that we continue to iterate
@@ -270,31 +291,17 @@ func (c *Cache) Search(cc CacheQuery) ([]*sdp.Item, error) {
 			return false
 		})
 
-		if len(items) == 0 {
-			return nil, ErrCacheNotFound
-		}
-
-		return items, err
+		return results
 	}
 
 	// If nothing other than SST has been set then return everything
 	indexes.methodIndex.Ascend(func(result *CachedResult) bool {
-		if result.Error != nil {
-			err = result.Error
-		}
-
-		if result.Item != nil {
-			items = append(items, result.Item)
-		}
+		results = append(results, result)
 
 		return true
 	})
 
-	if len(items) == 0 {
-		return nil, ErrCacheNotFound
-	}
-
-	return items, err
+	return results
 }
 
 // StoreItem Stores an item in the cache. Note that this item must be fully
@@ -304,18 +311,21 @@ func (c *Cache) StoreItem(item *sdp.Item, duration time.Duration) {
 		return
 	}
 
+	itemCopy := sdp.Item{}
+	item.Copy(&itemCopy)
+
 	res := CachedResult{
-		Item:   item,
+		Item:   &itemCopy,
 		Error:  nil,
 		Expiry: time.Now().Add(duration),
 		IndexValues: IndexValues{
-			UniqueAttributeValue: item.UniqueAttributeValue(),
-			Method:               item.Metadata.SourceRequest.Method,
-			Query:                item.Metadata.SourceRequest.Query,
+			UniqueAttributeValue: itemCopy.UniqueAttributeValue(),
+			Method:               itemCopy.Metadata.SourceRequest.Method,
+			Query:                itemCopy.Metadata.SourceRequest.Query,
 			SSTHash: SST{
-				SourceName: item.Metadata.SourceName,
-				Scope:      item.Scope,
-				Type:       item.Type,
+				SourceName: itemCopy.Metadata.SourceName,
+				Scope:      itemCopy.Scope,
+				Type:       itemCopy.Type,
 			}.Hash(),
 		},
 	}
@@ -341,6 +351,9 @@ func (c *Cache) StoreError(err error, duration time.Duration, indexValues IndexV
 }
 
 func (c *Cache) storeResult(res CachedResult) {
+	c.indexMutex.Lock()
+	defer c.indexMutex.Unlock()
+
 	// Create the index if it doesn't exist
 	indexes, ok := c.indexes[res.IndexValues.SSTHash]
 
@@ -358,9 +371,7 @@ func (c *Cache) storeResult(res CachedResult) {
 	c.expiryIndex.ReplaceOrInsert(&res)
 
 	// Update the purge time if required
-	if res.Expiry.Before(c.nextPurge) {
-		c.setNextPurge(res.Expiry)
-	}
+	c.setNextPurgeIfNewer(res.Expiry)
 }
 
 // sortString Returns the string that the cached result should be sorted on.
@@ -385,6 +396,29 @@ type PurgeStats struct {
 	NextExpiry *time.Time
 }
 
+// deleteResults Deletes many cached results at once
+func (c *Cache) deleteResults(results []*CachedResult) {
+	c.indexMutex.Lock()
+	defer c.indexMutex.Unlock()
+
+	for _, res := range results {
+		if indexSet, ok := c.indexes[res.IndexValues.SSTHash]; ok {
+			// For each expired item, delete it from all of the indexes that it will be in
+			if indexSet.methodIndex != nil {
+				indexSet.methodIndex.Delete(res)
+			}
+			if indexSet.queryIndex != nil {
+				indexSet.queryIndex.Delete(res)
+			}
+			if indexSet.uniqueAttributeValueIndex != nil {
+				indexSet.uniqueAttributeValueIndex.Delete(res)
+			}
+		}
+
+		c.expiryIndex.Delete(res)
+	}
+}
+
 // Purge Purges all expired items from the cache. The user must pass in the
 // `before` time. All items that expired before this will be purged. Usually
 // this would be just `time.Now()` however it could be overridden for testing
@@ -392,28 +426,14 @@ func (c *Cache) Purge(before time.Time) PurgeStats {
 	// Store the current time rather than calling it a million times
 	start := time.Now()
 
-	var indexSet *indexSet
-	var ok bool
 	var nextExpiry *time.Time
 
 	expired := make([]*CachedResult, 0)
 
 	// Look through the expiry cache and work out what has expired
+	c.indexMutex.RLock()
 	c.expiryIndex.Ascend(func(res *CachedResult) bool {
 		if res.Expiry.Before(before) {
-			if indexSet, ok = c.indexes[res.IndexValues.SSTHash]; ok {
-				// For each expired item, delete it from all of the indexes that it will be in
-				if indexSet.methodIndex != nil {
-					indexSet.methodIndex.Delete(res)
-				}
-				if indexSet.queryIndex != nil {
-					indexSet.queryIndex.Delete(res)
-				}
-				if indexSet.uniqueAttributeValueIndex != nil {
-					indexSet.uniqueAttributeValueIndex.Delete(res)
-				}
-			}
-
 			expired = append(expired, res)
 
 			return true
@@ -425,10 +445,9 @@ func (c *Cache) Purge(before time.Time) PurgeStats {
 		// As soon as hit this we'll stop ascending
 		return false
 	})
+	c.indexMutex.RUnlock()
 
-	for _, r := range expired {
-		c.expiryIndex.Delete(r)
-	}
+	c.deleteResults(expired)
 
 	return PurgeStats{
 		NumPurged:  len(expired),
@@ -453,9 +472,12 @@ func (c *Cache) GetMinWaitTime() time.Duration {
 // when the context is cancelled. The cache will be purged initially, at which
 // point the process will sleep until the next time an item expires
 func (c *Cache) StartPurger(ctx context.Context) error {
+	c.purgeMutex.Lock()
 	if c.purgeTimer == nil {
 		c.purgeTimer = time.NewTimer(0)
+		c.purgeMutex.Unlock()
 	} else {
+		c.purgeMutex.Unlock()
 		return errors.New("purger already running")
 	}
 
@@ -465,21 +487,11 @@ func (c *Cache) StartPurger(ctx context.Context) error {
 			case <-c.purgeTimer.C:
 				stats := c.Purge(time.Now())
 
-				if stats.NextExpiry == nil {
-					// If there is nothing else in the cache, wait basically
-					// forever
-					c.purgeTimer.Reset(1000 * time.Hour)
-					c.nextPurge = time.Now().Add(1000 * time.Hour)
-				} else {
-					if time.Until(*stats.NextExpiry) < c.GetMinWaitTime() {
-						c.purgeTimer.Reset(c.GetMinWaitTime())
-						c.nextPurge = time.Now().Add(c.GetMinWaitTime())
-					} else {
-						c.purgeTimer.Reset(time.Until(*stats.NextExpiry))
-						c.nextPurge = *stats.NextExpiry
-					}
-				}
+				c.setNextPurgeFromStats(stats)
 			case <-ctx.Done():
+				c.purgeMutex.Lock()
+				defer c.purgeMutex.Unlock()
+
 				c.purgeTimer.Stop()
 				c.purgeTimer = nil
 				return
@@ -490,15 +502,43 @@ func (c *Cache) StartPurger(ctx context.Context) error {
 	return nil
 }
 
-// setNextPurge Sets the next time the purger will run. While the purger is
-// active this will be constantly updated, however if the purger is sleeping and
-// new items are added this might need to be updated
-func (c *Cache) setNextPurge(t time.Time) {
-	if c.purgeTimer == nil {
-		return
-	}
+// setNextPurgeFromStats Sets when the next purge should run based on the stats of the
+// previous purge
+func (c *Cache) setNextPurgeFromStats(stats PurgeStats) {
+	c.purgeMutex.Lock()
+	defer c.purgeMutex.Unlock()
 
-	c.purgeTimer.Stop()
-	c.nextPurge = t
-	c.purgeTimer.Reset(time.Until(t))
+	if stats.NextExpiry == nil {
+		// If there is nothing else in the cache, wait basically
+		// forever
+		c.purgeTimer.Reset(1000 * time.Hour)
+		c.nextPurge = time.Now().Add(1000 * time.Hour)
+	} else {
+		if time.Until(*stats.NextExpiry) < c.GetMinWaitTime() {
+			c.purgeTimer.Reset(c.GetMinWaitTime())
+			c.nextPurge = time.Now().Add(c.GetMinWaitTime())
+		} else {
+			c.purgeTimer.Reset(time.Until(*stats.NextExpiry))
+			c.nextPurge = *stats.NextExpiry
+		}
+	}
+}
+
+// setNextPurgeIfNewer Sets the next time the purger will run, if the provided
+// time is sooner than the current scheduled purge time. While the purger is
+// active this will be constantly updated, however if the purger is sleeping and
+// new items are added this method ensures that the purger is woken up
+func (c *Cache) setNextPurgeIfNewer(t time.Time) {
+	c.purgeMutex.Lock()
+	defer c.purgeMutex.Unlock()
+
+	if t.Before(c.nextPurge) {
+		if c.purgeTimer == nil {
+			return
+		}
+
+		c.purgeTimer.Stop()
+		c.nextPurge = t
+		c.purgeTimer.Reset(time.Until(t))
+	}
 }

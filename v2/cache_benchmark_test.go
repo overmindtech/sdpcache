@@ -100,3 +100,20 @@ func BenchmarkCache1000SingleItem(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkCache10_000SingleItem(b *testing.B) {
+	c, query := NewPopulatedCache(10_000)
+
+	var err error
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		// Search for a single item
+		_, err = c.Search(query)
+
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
