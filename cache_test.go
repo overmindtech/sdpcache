@@ -1,731 +1,454 @@
 package sdpcache
 
 import (
+	"context"
 	"errors"
-	"fmt"
-	"reflect"
-	"sort"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/overmindtech/sdp-go"
-	"google.golang.org/protobuf/types/known/durationpb"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-type CacheTest struct {
-	Name       string
-	Inserts    []*sdp.Item
-	Duration   time.Duration
-	Tags       Tags
-	ExpectFind bool
-}
+func TestStoreItem(t *testing.T) {
+	cache := NewCache()
 
-var goodAttributes, _ = sdp.ToAttributes(map[string]interface{}{
-	"type":         "couch",
-	"colour":       "black",
-	"serialNumber": "982734928347",
-})
+	t.Run("one match", func(t *testing.T) {
+		item := GenerateRandomItem()
+		cache.StoreItem(item, 10*time.Second)
 
-var goodItem = &sdp.Item{
-	Scope:      "home",
-	Attributes: goodAttributes,
-	LinkedItemRequests: []*sdp.ItemRequest{
-		{
-			Type:   "furniture",
-			Method: sdp.RequestMethod_GET,
-			Query:  "1234",
-		},
-	},
-	Type:            "furniture",
-	UniqueAttribute: "serialNumber",
-	Metadata: &sdp.Metadata{
-		SourceName:            "test",
-		SourceDuration:        durationpb.New(time.Millisecond),
-		SourceDurationPerItem: durationpb.New(time.Millisecond),
-		SourceRequest: &sdp.ItemRequest{
-			Type:            "furniture",
-			Method:          sdp.RequestMethod_GET,
-			Query:           "1234",
-			LinkDepth:       1,
-			Scope:           "testScope",
-			ItemSubject:     "items",
-			ResponseSubject: "responses",
-		},
-		Timestamp: timestamppb.Now(),
-	},
-	LinkedItems: []*sdp.Reference{
-		{
-			Type:                 "furniture",
-			UniqueAttributeValue: "linked",
-			Scope:                "home",
-		},
-	},
-}
-
-var goodTags = Tags{
-	"foo":  "bar",
-	"when": "now",
-}
-
-var cacheDuration = (100 * time.Millisecond)
-
-var cacheTests = []CacheTest{
-	{"Cached items are immediately available", []*sdp.Item{goodItem}, (0 * time.Millisecond), goodTags, true},
-	{"Cached items are available after 0.5x duration", []*sdp.Item{goodItem}, (cacheDuration / 2), goodTags, true},
-	{"Cached items are gone after 1.5x duration", []*sdp.Item{goodItem}, (cacheDuration + (cacheDuration / 2)), goodTags, false},
-	{"Cached items are gone after 2x duration", []*sdp.Item{goodItem}, (cacheDuration * 2), goodTags, false},
-}
-
-func TestItemCaching(t *testing.T) {
-	for _, test := range cacheTests {
-		c := Cache{
-			Name:        test.Name,
-			MinWaitTime: 1 * time.Millisecond,
-		}
-
-		t.Run(test.Name, func(t *testing.T) {
-			// Sort the items first
-			sort.Slice(
-				test.Inserts,
-				func(i, j int) bool {
-					num, _ := test.Inserts[i].Compare(test.Inserts[j])
-					return num < 0
-				},
-			)
-
-			// Insert items
-			for _, i := range test.Inserts {
-				c.StoreItem(i, cacheDuration, test.Tags)
-			}
-
-			c.StartPurger()
-
-			// Wait for the prescribed amount of time
-			time.Sleep(test.Duration)
-
-			// Check that they still exist
-			results, err := c.Search(test.Tags)
-
-			// Sort results
-			sort.Slice(
-				results,
-				func(i, j int) bool {
-					num, _ := test.Inserts[i].Compare(test.Inserts[j])
-					return num < 0
-				},
-			)
-
-			if test.ExpectFind {
-				if len(test.Inserts) != len(results) {
-					t.Errorf("Cache result expected %v but got %v", test.Inserts, results)
-				}
-
-				for i := range test.Inserts {
-					if !reflect.DeepEqual(results[i], test.Inserts[i]) {
-						t.Errorf("Cache result expected %v but got %v", test.Inserts, results)
-					}
-				}
-			} else {
-				switch err.(type) {
-				case CacheNotFoundError:
-					// This is fine
-				default:
-					t.Errorf("Cache expected not to find anything, but got an unexpected error. Expected [], CacheNotFoundError, got: %v, %v", results, err)
-				}
-			}
-		})
-	}
-}
-
-func TestErrorCache(t *testing.T) {
-	c := Cache{
-		Name:        "errors",
-		MinWaitTime: 1 * time.Millisecond,
-	}
-
-	// Cache an item
-	c.StoreItem(goodItem, cacheDuration, goodTags)
-
-	// Cache an error with the same tags
-	c.StoreError(&sdp.ItemRequestError{}, cacheDuration, goodTags)
-
-	// Check to see what we get
-	results, err := c.Search(goodTags)
-
-	if err == nil {
-		t.Errorf("Found empty error but expected state.ItemNotFoundError. Results: %v Error: %v", results, err)
-	}
-}
-
-func TestDeleteCache(t *testing.T) {
-	var results []*sdp.Item
-	var err error
-
-	c := Cache{
-		Name:        "errors",
-		MinWaitTime: 1 * time.Millisecond,
-	}
-
-	// Cache an item
-	c.StoreItem(goodItem, cacheDuration, goodTags)
-
-	// Check to see what we get
-	results, err = c.Search(goodTags)
-
-	if len(results) != 1 {
-		t.Errorf("Found %v results, expected 1. Storing an item must have failed", len(results))
-	}
-
-	if err != nil {
-		t.Error("Error should be nil when items were found")
-	}
-
-	// Delete the item
-	c.Delete(goodTags)
-
-	// Check to see what we get
-	results, err = c.Search(goodTags)
-
-	if len(results) != 0 {
-		t.Errorf("Found %v results, expected 0. Deleting an item must have failed", len(results))
-	}
-
-	if err == nil {
-		t.Error("Error should not be nil when no items were found")
-	}
-}
-
-// Test auto tagging
-func TestAutoTagging(t *testing.T) {
-	t.Run("Items should contain expected tags", func(t *testing.T) {
-		c := Cache{
-			Name:        "errors",
-			MinWaitTime: 1 * time.Millisecond,
-		}
-
-		// Items
-		// Insert an item with manual tags
-		c.StoreItem(goodItem, (1 * time.Hour), goodTags)
-
-		// Note the expected automatic tags for an item
-		autoTags := Tags{
-			"type":                 goodItem.Type,
-			"scope":                goodItem.Scope,
-			"uniqueAttributeValue": fmt.Sprint(goodItem.UniqueAttributeValue()),
-		}
-
-		// Search using each of the expected tags
-		t.Run("Item should be searchable using all supplied tags", func(t *testing.T) {
-			for k, v := range goodTags {
-				results, err := c.Search(Tags{k: v})
-
-				expectNumItem(results, err, t, 1, Tags{k: v})
-			}
-		})
-
-		// Search using all of the expected automatic tags
-		t.Run("Item should be searchable using all default tags", func(t *testing.T) {
-			for k, v := range autoTags {
-				results, err := c.Search(Tags{k: v})
-
-				expectNumItem(results, err, t, 1, Tags{k: v})
-			}
-		})
-
-		// Search using the combination of automatic and manual tags
-		t.Run("Item should be searchable using all tags at once", func(t *testing.T) {
-			searchTags := Tags{}
-
-			for k, v := range goodTags {
-				searchTags[k] = v
-			}
-
-			for k, v := range autoTags {
-				searchTags[k] = v
-			}
-
-			results, err := c.Search(searchTags)
-
-			expectNumItem(results, err, t, 1, searchTags)
-		})
-	})
-
-	// Errors
-	t.Run("Errors should contain expected tags", func(t *testing.T) {
-		c := Cache{
-			Name:        "errors",
-			MinWaitTime: 1 * time.Millisecond,
-		}
-
-		expectedError := errors.New("💩")
-
-		// Insert an error with manual tags
-		c.StoreError(expectedError, (1 * time.Hour), goodTags)
-
-		// Search using each of the expected tags
-		autoTags := Tags{
-			"isError": "true",
-		}
-
-		// Search using all of the expected automatic tags
-		t.Run("Error should be searchable using all default tags", func(t *testing.T) {
-			for k, v := range autoTags {
-				_, err := c.Search(Tags{k: v})
-
-				if err != expectedError {
-					t.Errorf("Expected %v but got %v", expectedError, err)
-				}
-			}
-		})
-
-		t.Run("Error should be searchable using all supplied tags", func(t *testing.T) {
-			for k, v := range goodTags {
-				_, err := c.Search(Tags{k: v})
-
-				if err != expectedError {
-					t.Errorf("Expected %v but got %v", expectedError, err)
-				}
-			}
-		})
-
-		// Search using the combination of automatic and manual tags
-		t.Run("Error should be searchable using all tags at once", func(t *testing.T) {
-			searchTags := Tags{}
-
-			for k, v := range goodTags {
-				searchTags[k] = v
-			}
-
-			for k, v := range autoTags {
-				searchTags[k] = v
-			}
-
-			_, err := c.Search(searchTags)
-
-			if err != expectedError {
-				t.Errorf("Expected %v but got %v", expectedError, err)
-			}
-		})
-	})
-}
-
-// Negative testing
-// Tags that conflict with default tags
-func TestConflictingTagging(t *testing.T) {
-	c := Cache{
-		Name:        "errors",
-		MinWaitTime: 1 * time.Millisecond,
-	}
-
-	conflictTags := Tags{
-		"type": "SOMETHING_BAD",
-	}
-
-	c.StoreItem(goodItem, cacheDuration, conflictTags)
-
-	// Expect that the default tags take precedence since we rely on them
-	items, err := c.Search(conflictTags)
-
-	if err == nil || len(items) != 0 {
-		t.Error("Tags that conflict with defaults should be discarded")
-	}
-
-	items, err = c.Search(Tags{
-		"type": "furniture",
-	})
-
-	if err != nil || len(items) == 0 {
-		t.Error("Default tags not found")
-	}
-}
-
-// Inserting many errors
-func TestManyErrors(t *testing.T) {
-	c := Cache{
-		Name:        "errors",
-		MinWaitTime: 1 * time.Millisecond,
-	}
-
-	c.StoreError(errors.New("one"), cacheDuration, goodTags)
-	c.StoreError(errors.New("two"), cacheDuration, goodTags)
-	c.StoreError(errors.New("three"), cacheDuration, goodTags)
-
-	_, err := c.Search(goodTags)
-
-	if err == nil {
-		t.Error("Returned no errors after storing three, that's bad")
-	}
-
-	if err.Error() != "one" {
-		t.Error("When many errors are stored, the first one should be returned")
-	}
-}
-
-// Bad deletions
-func TestBadDeletions(t *testing.T) {
-	c := Cache{
-		Name:        "errors",
-		MinWaitTime: 1 * time.Millisecond,
-	}
-
-	c.StoreItem(goodItem, cacheDuration, goodTags)
-
-	c.Delete(Tags{
-		"bad": "tag",
-	})
-
-	items, _ := c.Search(goodTags)
-
-	i, _ := items[0].Compare(goodItem)
-
-	if i != 0 {
-		t.Error("Could not find item after unrelated deletion")
-	}
-}
-
-// We need to be sure that if an item was found in many different ways that this
-// is handled correctly. An example could be if an item was found using a LIST,
-// then again using a SEARCH. If the new item was to simply overwrite the old,
-// it would mean that if a user re-requested the find they would get s different
-// number of results since one of the results would have had its tags removed
-// when it was updated.
-//
-// The desired behavior is that if an item is found twice, but with a different
-// set of tags, it should ismply be cached twice
-func TestUpdating(t *testing.T) {
-	var items []*sdp.Item
-	var err error
-	var i int
-
-	c := Cache{
-		Name:        "errors",
-		MinWaitTime: 1 * time.Millisecond,
-	}
-
-	findTags := Tags{
-		"method": "find",
-	}
-	searchTags := Tags{
-		"method": "search",
-		"query":  "something:here=",
-	}
-
-	// Create the first item
-	c.StoreItem(goodItem, cacheDuration, findTags)
-
-	// Create the second item
-	c.StoreItem(goodItem, cacheDuration, searchTags)
-
-	items, err = c.Search(findTags)
-
-	if err != nil {
-		t.Errorf("Expected to find item with no error, got %v", err)
-	} else {
-
-		i, _ = items[0].Compare(goodItem)
-
-		if i != 0 {
-			t.Error("Could not find item cached with findtags")
-		}
-
-		items, err = c.Search(searchTags)
-
-		if err != nil {
-			t.Errorf("Expected to find item with no error, got %v", err)
-		} else {
-
-			i, _ = items[0].Compare(goodItem)
-
-			if i != 0 {
-				t.Error("Could not find item cached with searchTags")
-			}
-		}
-	}
-}
-
-// We need to ensure that doing parallel actions doesn't cause race-condition
-// related issues. This test will cover trying to insert many items at once
-func TestParallelUpdate(t *testing.T) {
-	c := Cache{
-		Name:        "errors",
-		MinWaitTime: 1 * time.Millisecond,
-	}
-
-	wg := sync.WaitGroup{}
-
-	// Run StoreItem 1000 times in parallel. This might seem like a lot but
-	// since the operation is so fast, we need to run it a lot of times to make
-	// sure that it has a good chance of actually encountering a race condition
-	for i := 0; i < 1000; i++ {
-		wg.Add(1)
-		go func() {
-			c.StoreItem(goodItem, cacheDuration, goodTags)
-			wg.Done()
-		}()
-	}
-
-	wg.Wait()
-
-	if len(c.Storage) > 1 {
-		t.Errorf("Item has been cached %v times, expected once", len(c.Storage))
-	}
-
-}
-
-// Inserting many errors in parallel
-func TestParallelErrors(t *testing.T) {
-	c := Cache{
-		Name:        "errors",
-		MinWaitTime: 1 * time.Millisecond,
-	}
-
-	wg := sync.WaitGroup{}
-	err := errors.New("one")
-
-	for i := 0; i < 1000; i++ {
-		wg.Add(1)
-		go func() {
-			c.StoreError(err, cacheDuration, goodTags)
-			wg.Done()
-		}()
-	}
-
-	wg.Wait()
-
-	if len(c.Storage) > 1 {
-		t.Errorf("Item has been cached %v times, expected once", len(c.Storage))
-	}
-}
-
-// We want to ensure that when you cache an item, the cache isn't storing a
-// pointer to the item that we supplied. This is because we might want to update
-// or change the item later and we don't want this to affect the item within the
-// cache. Upon intertion and retrieval items should be duplicated in memory to
-// ensure that the cache is a *copy* if the items and not just a registry of
-// references to the origfinal items that might be bing messed with as part of
-// normal operation
-func TestItemPointerDuplication(t *testing.T) {
-	var expectedLinkedItems int
-	var expectedLinkedItemRequests int
-
-	c := Cache{
-		Name:        "TestItemPointerDuplication",
-		MinWaitTime: 1 * time.Millisecond,
-	}
-
-	tags := Tags{
-		"testname": "TestItemPointerDuplication",
-	}
-
-	t.Run("Insert an item", func(t *testing.T) {
-		c.StoreItem(goodItem, cacheDuration, tags)
-	})
-
-	t.Run("Modify the insterted item", func(t *testing.T) {
-		goodItem.Type = "modified"
-		goodItem.UniqueAttribute = "modified"
-
-		// Attributes
-		goodItem.Attributes.Set("modified", "modified")
-
-		// Metadata
-		goodItem.Metadata.SourceName = "modified"
-		goodItem.Metadata.SourceRequest.Scope = "modified"
-		goodItem.Metadata.SourceRequest.Method = sdp.RequestMethod_SEARCH
-		goodItem.Metadata.Timestamp = timestamppb.New(time.Unix(0, 0))
-		goodItem.Metadata.SourceDuration = durationpb.New(10 * time.Second)
-		goodItem.Metadata.SourceDurationPerItem = durationpb.New(10 * time.Second)
-		goodItem.Scope = "modified"
-
-		// Links
-		expectedLinkedItemRequests = len(goodItem.LinkedItemRequests)
-		expectedLinkedItems = len(goodItem.LinkedItems)
-
-		// Append to make sure the slice is being copied by value
-		goodItem.LinkedItemRequests = append(goodItem.LinkedItemRequests, &sdp.ItemRequest{
-			Type:      "modified",
-			Method:    sdp.RequestMethod_LIST,
-			Query:     "modified",
-			LinkDepth: 2,
-			Scope:     "modified",
-		})
-		// Modify an existing item to ensure that they are being cloned deeply
-		goodItem.LinkedItemRequests[0].Scope = "modified"
-
-		goodItem.LinkedItems = append(goodItem.LinkedItems, &sdp.Reference{
-			Type:                 "modified",
-			UniqueAttributeValue: "modified",
-			Scope:                "modifed",
-		})
-		goodItem.LinkedItems[0].Scope = "modified"
-	})
-
-	t.Run("Check that the cached item has not been modified", func(t *testing.T) {
-		// Get the item back from the cache
-		cachedItems, err := c.Search(tags)
+		results, err := cache.Search(ToCacheQuery(item))
 
 		if err != nil {
 			t.Error(err)
 		}
 
-		if l := len(cachedItems); l != 1 {
-			t.Errorf("Found %v items from cache, expected 1", l)
+		if len(results) != 1 {
+			t.Errorf("expected 1 result, got %v", len(results))
+		}
+	})
+
+	t.Run("another match", func(t *testing.T) {
+		item := GenerateRandomItem()
+		cache.StoreItem(item, 10*time.Second)
+
+		results, err := cache.Search(ToCacheQuery(item))
+
+		if err != nil {
+			t.Error(err)
 		}
 
-		cachedItem := cachedItems[0]
-
-		t.Run("Check Type", func(t *testing.T) {
-			if cachedItem.GetType() == "modified" {
-				t.Error("Type was modified")
-			}
-		})
-		t.Run("Check UniqueAttribute", func(t *testing.T) {
-			if cachedItem.GetUniqueAttribute() == "modified" {
-				t.Error("UniqueAttribute was modified")
-			}
-		})
-		t.Run("Check Attributes", func(t *testing.T) {
-			_, err := cachedItem.GetAttributes().Get("modified")
-
-			if err == nil {
-				t.Error("Attributes was modified")
-			}
-		})
-		t.Run("Check Metadata", func(t *testing.T) {
-			if cachedItem.GetMetadata().GetSourceName() == "modified" {
-				t.Error("Item Metadata SourceName was modififed")
-			}
-			if cachedItem.GetMetadata().GetSourceRequest().GetScope() != "testScope" {
-				t.Error("Item Metadata SourceRequest Scope was modififed")
-			}
-			if cachedItem.GetMetadata().GetSourceRequest().GetMethod() != sdp.RequestMethod_GET {
-				t.Error("Item Metadata SourceRequest Method was modififed")
-			}
-			if cachedItem.GetMetadata().GetTimestamp().AsTime().Before(time.Unix(0, 1)) {
-				t.Error("Item Metadata Timestamp was modififed")
-			}
-			if cachedItem.GetMetadata().GetSourceDuration().AsDuration() > time.Millisecond {
-				t.Error("Item Metadata SourceDuration was modififed")
-			}
-			if cachedItem.GetMetadata().GetSourceDurationPerItem().AsDuration() > time.Millisecond {
-				t.Error("Item Metadata SourceDurationPerItem was modififed")
-			}
-
-		})
-		t.Run("Check Scope", func(t *testing.T) {
-			if cachedItem.GetScope() == "modified" {
-				t.Error("Scope was modified")
-			}
-		})
-		t.Run("Check LinkedItemRequests", func(t *testing.T) {
-			if len(cachedItem.GetLinkedItemRequests()) > expectedLinkedItemRequests {
-				t.Error("LinkedItemRequests was modified by adding a value to the slice")
-			}
-
-			if cachedItem.LinkedItemRequests[0].Scope == "modified" {
-				t.Error("LinkedItemRequests was modified by changing an existing value")
-			}
-		})
-		t.Run("Check LinkedItems", func(t *testing.T) {
-			if len(cachedItem.GetLinkedItems()) > expectedLinkedItems {
-				t.Error("LinkedItems was modified by adding a value to the slice")
-			}
-
-			if cachedItem.LinkedItems[0].Scope == "modified" {
-				t.Error("LinkedItems was modified by changing an existing value")
-			}
-		})
+		if len(results) != 1 {
+			t.Errorf("expected 1 result, got %v", len(results))
+		}
 	})
 }
 
-func TestClearCache(t *testing.T) {
-	var results []*sdp.Item
-	var err error
+func TestStoreError(t *testing.T) {
+	cache := NewCache()
 
-	c := Cache{
-		Name:        "errors",
-		MinWaitTime: 1 * time.Millisecond,
-	}
+	t.Run("with just an error", func(t *testing.T) {
+		sst := SST{
+			SourceName: "foo",
+			Scope:      "foo",
+			Type:       "foo",
+		}
 
-	// Cache an item
-	c.StoreItem(goodItem, cacheDuration, goodTags)
+		uav := "foo"
 
-	// Check to see what we get
-	results, err = c.Search(goodTags)
+		cache.StoreError(errors.New("arse"), 10*time.Second, IndexValues{
+			SSTHash: sst.Hash(),
+			Method:  sdp.RequestMethod_GET,
+			Query:   uav,
+		})
 
-	if len(results) != 1 {
-		t.Errorf("Found %v results, expected 1. Storing an item must have failed", len(results))
-	}
+		items, err := cache.Search(CacheQuery{
+			SST:    sst,
+			Method: sdp.RequestMethod_GET.Enum(),
+			Query:  &uav,
+		})
 
-	if err != nil {
-		t.Error("Error should be nil when items were found")
-	}
+		if len(items) > 0 {
+			t.Errorf("expected 0 items, got %v", len(items))
+		}
 
-	// Delete the item
-	c.Clear()
+		if err == nil {
+			t.Error("expected error, got nil")
+		}
+	})
 
-	// Check to see what we get
-	results, err = c.Search(goodTags)
+	t.Run("with items and an error for the same query", func(t *testing.T) {
+		// Add an item with the same details as above
+		item := GenerateRandomItem()
+		item.Metadata.SourceRequest.Method = sdp.RequestMethod_GET
+		item.Metadata.SourceRequest.Query = "foo"
+		item.Metadata.SourceName = "foo"
+		item.Scope = "foo"
+		item.Type = "foo"
 
-	if len(results) != 0 {
-		t.Errorf("Found %v results, expected 0. Deleting an item must have failed", len(results))
-	}
+		items, err := cache.Search(CacheQuery{
+			SST: SST{
+				SourceName: item.Metadata.SourceName,
+				Scope:      item.Scope,
+				Type:       item.Type,
+			},
+			Method: &item.Metadata.SourceRequest.Method,
+			Query:  &item.Metadata.SourceRequest.Query,
+		})
 
-	if err == nil {
-		t.Error("Error should not be nil when no items were found")
+		if len(items) > 0 {
+			t.Errorf("expected 0 items, got %v", len(items))
+		}
+
+		if err == nil {
+			t.Error("expected error, got nil")
+		}
+	})
+
+	t.Run("with multiple errors", func(t *testing.T) {
+		sst := SST{
+			SourceName: "foo",
+			Scope:      "foo",
+			Type:       "foo",
+		}
+
+		uav := "foo"
+
+		cache.StoreError(errors.New("nope"), 10*time.Second, IndexValues{
+			SSTHash: sst.Hash(),
+			Method:  sdp.RequestMethod_GET,
+			Query:   uav,
+		})
+
+		items, err := cache.Search(CacheQuery{
+			SST:    sst,
+			Method: sdp.RequestMethod_GET.Enum(),
+			Query:  &uav,
+		})
+
+		if len(items) > 0 {
+			t.Errorf("expected 0 items, got %v", len(items))
+		}
+
+		if err == nil {
+			t.Error("expected error, got nil")
+		}
+	})
+}
+
+func ToCacheQuery(item *sdp.Item) CacheQuery {
+	uav := item.UniqueAttributeValue()
+
+	return CacheQuery{
+		SST: SST{
+			SourceName: item.Metadata.SourceName,
+			Scope:      item.Scope,
+			Type:       item.Type,
+		},
+		UniqueAttributeValue: &uav,
+		Method:               &item.Metadata.SourceRequest.Method,
+		Query:                &item.Metadata.SourceRequest.Query,
 	}
 }
 
-func expectNumItem(results []*sdp.Item, err error, t *testing.T, numExpected int, searchTags Tags) {
-	if err != nil {
-		t.Errorf("Got error when searching for an item using the supplied tags %v", searchTags)
+func TestPurge(t *testing.T) {
+	cache := NewCache()
+
+	cachedItems := []struct {
+		Item   *sdp.Item
+		Expiry time.Time
+	}{
+		{
+			Item:   GenerateRandomItem(),
+			Expiry: time.Now().Add(0 * time.Second),
+		},
+		{
+			Item:   GenerateRandomItem(),
+			Expiry: time.Now().Add(1 * time.Second),
+		},
+		{
+			Item:   GenerateRandomItem(),
+			Expiry: time.Now().Add(2 * time.Second),
+		},
+		{
+			Item:   GenerateRandomItem(),
+			Expiry: time.Now().Add(3 * time.Second),
+		},
+		{
+			Item:   GenerateRandomItem(),
+			Expiry: time.Now().Add(4 * time.Second),
+		},
+		{
+			Item:   GenerateRandomItem(),
+			Expiry: time.Now().Add(5 * time.Second),
+		},
 	}
 
-	if len(results) != numExpected {
-		t.Errorf("Expected %v result, got %v: %v", numExpected, len(results), results)
+	for _, i := range cachedItems {
+		cache.StoreItem(i.Item, time.Until(i.Expiry))
+	}
+
+	// Make sure all the items are in the cache
+	for _, i := range cachedItems {
+		uav := i.Item.UniqueAttributeValue()
+		items, err := cache.Search(CacheQuery{
+			SST: SST{
+				SourceName: i.Item.Metadata.SourceName,
+				Scope:      i.Item.Scope,
+				Type:       i.Item.Type,
+			},
+			UniqueAttributeValue: &uav,
+			Method:               &i.Item.Metadata.SourceRequest.Method,
+			Query:                &i.Item.Metadata.SourceRequest.Query,
+		})
+
+		if err != nil {
+			t.Error(err)
+		}
+
+		if len(items) != 1 {
+			t.Errorf("expected 1 item, got %v", len(items))
+		}
+	}
+
+	// Purge just the first one
+	stats := cache.Purge(cachedItems[0].Expiry.Add(500 * time.Millisecond))
+
+	if stats.NumPurged != 1 {
+		t.Errorf("expected 1 item purged, got %v", stats.NumPurged)
+	}
+
+	// The times won't be exactly equal because we're checking it against
+	// time.Now more than once. So I need to check that they are *almost* the
+	// same, but not exactly
+	nextExpiryString := stats.NextExpiry.Format(time.RFC3339)
+	expectedNextExpiryString := cachedItems[1].Expiry.Format(time.RFC3339)
+
+	if nextExpiryString != expectedNextExpiryString {
+		t.Errorf("expected next expiry to be %v, got %v", expectedNextExpiryString, nextExpiryString)
+	}
+
+	// Purge all but the last one
+	stats = cache.Purge(cachedItems[4].Expiry.Add(500 * time.Millisecond))
+
+	if stats.NumPurged != 4 {
+		t.Errorf("expected 4 item purged, got %v", stats.NumPurged)
+	}
+
+	// Purge the last one
+	stats = cache.Purge(cachedItems[5].Expiry.Add(500 * time.Millisecond))
+
+	if stats.NumPurged != 1 {
+		t.Errorf("expected 1 item purged, got %v", stats.NumPurged)
+	}
+
+	if stats.NextExpiry != nil {
+		t.Errorf("expected expiry to be nil, got %v", stats.NextExpiry)
 	}
 }
 
-func TestStopPurging(t *testing.T) {
-	c := Cache{
-		Name:        "errors",
-		MinWaitTime: 1 * time.Millisecond,
+func TestStartPurge(t *testing.T) {
+	cache := NewCache()
+	cache.MinWaitTime = 100 * time.Millisecond
+
+	cachedItems := []struct {
+		Item   *sdp.Item
+		Expiry time.Time
+	}{
+		{
+			Item:   GenerateRandomItem(),
+			Expiry: time.Now().Add(0),
+		},
+		{
+			Item:   GenerateRandomItem(),
+			Expiry: time.Now().Add(100 * time.Millisecond),
+		},
 	}
 
-	c.StartPurger()
+	for _, i := range cachedItems {
+		cache.StoreItem(i.Item, time.Until(i.Expiry))
+	}
 
-	// Cache an item
-	c.StoreItem(goodItem, cacheDuration, goodTags)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	// Check to see that we get an item
-	_, err := c.Search(goodTags)
+	err := cache.StartPurger(ctx)
 
 	if err != nil {
-		t.Error("Error should be nil when items were found")
+		t.Error(err)
 	}
 
-	time.Sleep(cacheDuration * 2)
+	// Wait for everything to be purged
+	time.Sleep(200 * time.Millisecond)
 
-	// Check to see what we get
-	_, err = c.Search(goodTags)
+	// At this point everything should be been cleaned, and the purger should be
+	// sleeping forever
+	items, err := cache.Search(ToCacheQuery(cachedItems[1].Item))
 
-	if err == nil {
-		t.Error("Error should not be nil when no items were found")
+	if !errors.Is(err, ErrCacheNotFound) {
+		t.Errorf("unexpected error: %v", err)
+		t.Errorf("unexpected items: %v", len(items))
 	}
 
-	c.StopPurger()
+	cache.purgeMutex.Lock()
+	if cache.nextPurge.Before(time.Now().Add(time.Hour)) {
+		// If the next purge is within the next hour that's an error, it should
+		// be really, really for in the future
+		t.Errorf("Expected next purge to be in 1000 years, got %v", cache.nextPurge.String())
+	}
+	cache.purgeMutex.Unlock()
 
-	c.StoreItem(goodItem, cacheDuration, goodTags)
+	// Adding a new item should kick off the purging again
+	for _, i := range cachedItems {
+		cache.StoreItem(i.Item, 100*time.Millisecond)
+	}
 
-	time.Sleep(cacheDuration * 2)
+	time.Sleep(200 * time.Millisecond)
 
-	// Check to see that we get an item
-	_, err = c.Search(goodTags)
+	// It should be empty again
+	items, err = cache.Search(ToCacheQuery(cachedItems[1].Item))
+
+	if !errors.Is(err, ErrCacheNotFound) {
+		t.Errorf("unexpected error: %v", err)
+		t.Errorf("unexpected items: %v", len(items))
+	}
+}
+
+func TestStopPurge(t *testing.T) {
+	cache := NewCache()
+	cache.MinWaitTime = 1 * time.Millisecond
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	cache.StartPurger(ctx)
+
+	// Stop the purger
+	cancel()
+
+	// Insert an item
+	item := GenerateRandomItem()
+	cache.StoreItem(item, time.Millisecond)
+	sst := SST{
+		SourceName: item.Metadata.SourceName,
+		Scope:      item.Scope,
+		Type:       item.Type,
+	}
+
+	// Make sure it's not purged
+	time.Sleep(100 * time.Millisecond)
+	items, err := cache.Search(CacheQuery{
+		SST: sst,
+	})
 
 	if err != nil {
-		t.Error("Error should be nil when items were found")
+		t.Error(err)
 	}
 
+	if len(items) != 1 {
+		t.Errorf("Expected 1 item, got %v", len(items))
+	}
+}
+
+func TestDelete(t *testing.T) {
+	cache := NewCache()
+
+	// Insert an item
+	item := GenerateRandomItem()
+	cache.StoreItem(item, time.Millisecond)
+	sst := SST{
+		SourceName: item.Metadata.SourceName,
+		Scope:      item.Scope,
+		Type:       item.Type,
+	}
+
+	// It should be there
+	items, err := cache.Search(CacheQuery{
+		SST: sst,
+	})
+
+	if err != nil {
+		t.Error(err)
+	}
+
+	if len(items) != 1 {
+		t.Errorf("expected 1 item, got %v", len(items))
+	}
+
+	// Delete it
+	cache.Delete(CacheQuery{
+		SST: sst,
+	})
+
+	// It should be gone
+	items, err = cache.Search(CacheQuery{
+		SST: sst,
+	})
+
+	if err != ErrCacheNotFound {
+		t.Errorf("expected ErrCacheNotFound, got %v", err)
+	}
+
+	if len(items) != 0 {
+		t.Errorf("expected 0 item, got %v", len(items))
+	}
+}
+
+// This test is designed to be run with -race to ensure that there aren't any
+// data races
+func TestConcurrent(t *testing.T) {
+	cache := NewCache()
+	// Run the purger super fast to generate a worst-case scenario
+	cache.MinWaitTime = 1 * time.Millisecond
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cache.StartPurger(ctx)
+
+	var wg sync.WaitGroup
+
+	numParallel := 1_000
+
+	for i := 0; i < numParallel; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// Store the item
+			item := GenerateRandomItem()
+			cache.StoreItem(item, 100*time.Millisecond)
+
+			wg.Add(1)
+			// Create a goroutine to also delete in parallel
+			go func() {
+				defer wg.Done()
+				cache.Delete(ToCacheQuery(item))
+			}()
+		}()
+	}
+
+	wg.Wait()
+}
+
+func TestPointers(t *testing.T) {
+	cache := NewCache()
+
+	item := GenerateRandomItem()
+
+	cache.StoreItem(item, time.Minute)
+	cq := ToCacheQuery(item)
+
+	item.Type = "bad"
+
+	items, err := cache.Search(cq)
+
+	if err != nil {
+		t.Error(err)
+	}
+
+	if len(items) != 1 {
+		t.Errorf("expected 1 item, got %v", len(items))
+	}
+
+	if items[0].Type == "bad" {
+		t.Error("item was changed in cache")
+	}
 }
