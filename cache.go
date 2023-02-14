@@ -524,11 +524,11 @@ func (c *Cache) setNextPurgeFromStats(stats PurgeStats) {
 	}
 }
 
-// setNextPurgeIfNewer Sets the next time the purger will run, if the provided
+// setNextPurgeIfEarlier Sets the next time the purger will run, if the provided
 // time is sooner than the current scheduled purge time. While the purger is
 // active this will be constantly updated, however if the purger is sleeping and
 // new items are added this method ensures that the purger is woken up
-func (c *Cache) setNextPurgeIfNewer(t time.Time) {
+func (c *Cache) setNextPurgeIfEarlier(t time.Time) {
 	c.purgeMutex.Lock()
 	defer c.purgeMutex.Unlock()
 
