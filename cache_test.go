@@ -290,6 +290,14 @@ func TestStartPurge(t *testing.T) {
 		t.Errorf("unexpected items: %v", len(items))
 	}
 
+	cache.purgeMutex.Lock()
+	if cache.nextPurge.Before(time.Now().Add(time.Hour)) {
+		// If the next purge is within the next hour that's an error, it should
+		// be really, really for in the future
+		t.Errorf("Expected next purge to be in 1000 years, got %v", cache.nextPurge.String())
+	}
+	cache.purgeMutex.Unlock()
+
 	// Adding a new item should kick off the purging again
 	for _, i := range cachedItems {
 		cache.StoreItem(i.Item, 100*time.Millisecond)

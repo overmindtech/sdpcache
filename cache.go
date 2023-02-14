@@ -371,7 +371,7 @@ func (c *Cache) storeResult(res CachedResult) {
 	c.expiryIndex.ReplaceOrInsert(&res)
 
 	// Update the purge time if required
-	c.setNextPurgeIfNewer(res.Expiry)
+	c.setNextPurgeIfEarlier(res.Expiry)
 }
 
 // sortString Returns the string that the cached result should be sorted on.
