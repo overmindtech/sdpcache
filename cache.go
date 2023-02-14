@@ -367,7 +367,7 @@ func (c *Cache) storeResult(res CachedResult) {
 	indexes.queryIndex.ReplaceOrInsert(&res)
 	indexes.uniqueAttributeValueIndex.ReplaceOrInsert(&res)
 
-	// Add the item ot the expiry index
+	// Add the item to the expiry index
 	c.expiryIndex.ReplaceOrInsert(&res)
 
 	// Update the purge time if required
