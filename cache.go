@@ -201,10 +201,14 @@ func newIndexSet() *indexSet {
 // will be returned immediately, if nothing is found a ErrCacheNotFound will
 // be returned. Otherwise this will return items that match ALL of the given
 // query parameters
-func (c *Cache) Search(cc CacheQuery) ([]*sdp.Item, error) {
+func (c *Cache) Search(cq CacheQuery) ([]*sdp.Item, error) {
+	if c == nil {
+		return nil, nil
+	}
+
 	items := make([]*sdp.Item, 0)
 
-	results := c.getResults(cc)
+	results := c.getResults(cq)
 
 	if len(results) == 0 {
 		return nil, ErrCacheNotFound
@@ -232,20 +236,24 @@ func (c *Cache) Search(cc CacheQuery) ([]*sdp.Item, error) {
 }
 
 // Delete Deletes anything that matches the given cache query
-func (c *Cache) Delete(cc CacheQuery) {
-	c.deleteResults(c.getResults(cc))
+func (c *Cache) Delete(cq CacheQuery) {
+	if c == nil {
+		return
+	}
+
+	c.deleteResults(c.getResults(cq))
 }
 
 // getResults Searches indexes for cached results, doing no other logic. If
 // nothing is found an empty slice will be returned.
-func (c *Cache) getResults(cc CacheQuery) []*CachedResult {
+func (c *Cache) getResults(cq CacheQuery) []*CachedResult {
 	c.indexMutex.RLock()
 	defer c.indexMutex.RUnlock()
 
 	results := make([]*CachedResult, 0)
 
 	// Get the relevant set of indexes based on the SST Hash
-	sstHash := cc.SST.Hash()
+	sstHash := cq.SST.Hash()
 	indexes, exists := c.indexes[sstHash]
 	pivot := CachedResult{
 		IndexValues: IndexValues{
@@ -261,12 +269,12 @@ func (c *Cache) getResults(cc CacheQuery) []*CachedResult {
 	// Start with the most specific index and fall back to the least specific.
 	// Checking all matching items and returning. These is no need to check all
 	// indexes since they all have the same content
-	if cc.UniqueAttributeValue != nil {
-		pivot.IndexValues.UniqueAttributeValue = *cc.UniqueAttributeValue
+	if cq.UniqueAttributeValue != nil {
+		pivot.IndexValues.UniqueAttributeValue = *cq.UniqueAttributeValue
 
 		indexes.uniqueAttributeValueIndex.AscendGreaterOrEqual(&pivot, func(result *CachedResult) bool {
-			if *cc.UniqueAttributeValue == result.IndexValues.UniqueAttributeValue {
-				if cc.Matches(result.IndexValues) {
+			if *cq.UniqueAttributeValue == result.IndexValues.UniqueAttributeValue {
+				if cq.Matches(result.IndexValues) {
 					results = append(results, result)
 				}
 
@@ -280,12 +288,12 @@ func (c *Cache) getResults(cc CacheQuery) []*CachedResult {
 		return results
 	}
 
-	if cc.Query != nil {
-		pivot.IndexValues.Query = *cc.Query
+	if cq.Query != nil {
+		pivot.IndexValues.Query = *cq.Query
 
 		indexes.queryIndex.AscendGreaterOrEqual(&pivot, func(result *CachedResult) bool {
-			if *cc.Query == result.IndexValues.Query {
-				if cc.Matches(result.IndexValues) {
+			if *cq.Query == result.IndexValues.Query {
+				if cq.Matches(result.IndexValues) {
 					results = append(results, result)
 				}
 
@@ -299,13 +307,13 @@ func (c *Cache) getResults(cc CacheQuery) []*CachedResult {
 		return results
 	}
 
-	if cc.Method != nil {
-		pivot.IndexValues.Method = *cc.Method
+	if cq.Method != nil {
+		pivot.IndexValues.Method = *cq.Method
 
 		indexes.methodIndex.AscendGreaterOrEqual(&pivot, func(result *CachedResult) bool {
-			if *cc.Method == result.IndexValues.Method {
+			if *cq.Method == result.IndexValues.Method {
 				// If the methods match, check the rest
-				if cc.Matches(result.IndexValues) {
+				if cq.Matches(result.IndexValues) {
 					results = append(results, result)
 				}
 
@@ -345,14 +353,20 @@ func (c *Cache) StoreItem(item *sdp.Item, duration time.Duration) {
 		Expiry: time.Now().Add(duration),
 		IndexValues: IndexValues{
 			UniqueAttributeValue: itemCopy.UniqueAttributeValue(),
-			Method:               itemCopy.Metadata.SourceRequest.Method,
-			Query:                itemCopy.Metadata.SourceRequest.Query,
-			SSTHash: SST{
-				SourceName: itemCopy.Metadata.SourceName,
-				Scope:      itemCopy.Scope,
-				Type:       itemCopy.Type,
-			}.Hash(),
 		},
+	}
+
+	if itemCopy.Metadata != nil {
+		if itemCopy.Metadata.SourceRequest != nil {
+			res.IndexValues.Method = item.Metadata.SourceRequest.Method
+			res.IndexValues.Query = item.Metadata.SourceRequest.Query
+		}
+
+		res.IndexValues.SSTHash = SST{
+			SourceName: itemCopy.Metadata.SourceName,
+			Scope:      itemCopy.Scope,
+			Type:       itemCopy.Type,
+		}.Hash()
 	}
 
 	c.storeResult(res)
@@ -378,6 +392,10 @@ func (c *Cache) StoreError(err error, duration time.Duration, cacheQuery CacheQu
 
 // Clear Delete all data in cache
 func (c *Cache) Clear() {
+	if c == nil {
+		return
+	}
+
 	c.indexMutex.Lock()
 	defer c.indexMutex.Unlock()
 
@@ -458,6 +476,10 @@ func (c *Cache) deleteResults(results []*CachedResult) {
 // `before` time. All items that expired before this will be purged. Usually
 // this would be just `time.Now()` however it could be overridden for testing
 func (c *Cache) Purge(before time.Time) PurgeStats {
+	if c == nil {
+		return PurgeStats{}
+	}
+
 	// Store the current time rather than calling it a million times
 	start := time.Now()
 
@@ -496,6 +518,10 @@ const MinWaitDefault = (5 * time.Second)
 
 // GetMinWaitTime Returns the minimum wait time or the default if not set
 func (c *Cache) GetMinWaitTime() time.Duration {
+	if c == nil {
+		return 0
+	}
+
 	if c.MinWaitTime == 0 {
 		return MinWaitDefault
 	}
@@ -507,6 +533,10 @@ func (c *Cache) GetMinWaitTime() time.Duration {
 // when the context is cancelled. The cache will be purged initially, at which
 // point the process will sleep until the next time an item expires
 func (c *Cache) StartPurger(ctx context.Context) error {
+	if c == nil {
+		return nil
+	}
+
 	c.purgeMutex.Lock()
 	if c.purgeTimer == nil {
 		c.purgeTimer = time.NewTimer(0)
