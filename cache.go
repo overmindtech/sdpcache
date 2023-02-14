@@ -27,48 +27,69 @@ type CacheQuery struct {
 	Query                *string
 }
 
-func (cc CacheQuery) String() string {
+func (cq CacheQuery) String() string {
 	fields := []string{
-		("SourceName=" + cc.SST.SourceName),
-		("Scope=" + cc.SST.Scope),
-		("Type=" + cc.SST.Type),
+		("SourceName=" + cq.SST.SourceName),
+		("Scope=" + cq.SST.Scope),
+		("Type=" + cq.SST.Type),
 	}
 
-	if cc.UniqueAttributeValue != nil {
-		fields = append(fields, ("UniqueAttributeValue=" + *cc.UniqueAttributeValue))
+	if cq.UniqueAttributeValue != nil {
+		fields = append(fields, ("UniqueAttributeValue=" + *cq.UniqueAttributeValue))
 	}
 
-	if cc.Method != nil {
-		fields = append(fields, ("Method=" + cc.Method.String()))
+	if cq.Method != nil {
+		fields = append(fields, ("Method=" + cq.Method.String()))
 	}
 
-	if cc.Query != nil {
-		fields = append(fields, ("Query=" + *cc.Query))
+	if cq.Query != nil {
+		fields = append(fields, ("Query=" + *cq.Query))
 	}
 
 	return strings.Join(fields, ", ")
+}
+
+// ToIndexValues Converts a cache query to a set of index values
+func (cq CacheQuery) ToIndexValues() IndexValues {
+	iv := IndexValues{
+		SSTHash: cq.SST.Hash(),
+	}
+
+	if cq.Method != nil {
+		iv.Method = *cq.Method
+	}
+
+	if cq.Query != nil {
+		iv.Query = *cq.Query
+	}
+
+	if cq.UniqueAttributeValue != nil {
+		iv.UniqueAttributeValue = *cq.UniqueAttributeValue
+	}
+
+	return iv
 }
 
 // Matches Returns whether or not the supplied index values match the
 // CacheQuery, excluding the SST since this will have already been validated.
 // Note that this only checks values that ave actually been set in the
 // CacheQuery
-func (cc CacheQuery) Matches(i IndexValues) bool {
+func (cq CacheQuery) Matches(i IndexValues) bool {
 	// Check for any mismatches on the values that are set
-	if cc.Method != nil {
-		if *cc.Method != i.Method {
+	if cq.Method != nil {
+		if *cq.Method != i.Method {
 			return false
 		}
 	}
 
-	if cc.Query != nil {
-		if *cc.Query != i.Query {
+	if cq.Query != nil {
+		if *cq.Query != i.Query {
 			return false
 		}
 	}
 
-	if cc.UniqueAttributeValue != nil {
-		if *cc.UniqueAttributeValue != i.UniqueAttributeValue {
+	if cq.UniqueAttributeValue != nil {
+		if *cq.UniqueAttributeValue != i.UniqueAttributeValue {
 			return false
 		}
 	}
@@ -338,8 +359,9 @@ func (c *Cache) StoreItem(item *sdp.Item, duration time.Duration) {
 }
 
 // StoreError Stores an error for the given duration. Since we can't determine
-// the index values from the error itself, the user also needs to pass these in.
-func (c *Cache) StoreError(err error, duration time.Duration, indexValues IndexValues) {
+// the index values from the error itself, the user also needs to pass in the
+// cache query that this error should respond to
+func (c *Cache) StoreError(err error, duration time.Duration, cacheQuery CacheQuery) {
 	if c == nil || err == nil {
 		return
 	}
@@ -348,7 +370,7 @@ func (c *Cache) StoreError(err error, duration time.Duration, indexValues IndexV
 		Item:        nil,
 		Error:       err,
 		Expiry:      time.Now().Add(duration),
-		IndexValues: indexValues,
+		IndexValues: cacheQuery.ToIndexValues(),
 	}
 
 	c.storeResult(res)

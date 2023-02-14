@@ -56,10 +56,10 @@ func TestStoreError(t *testing.T) {
 
 		uav := "foo"
 
-		cache.StoreError(errors.New("arse"), 10*time.Second, IndexValues{
-			SSTHash: sst.Hash(),
-			Method:  sdp.RequestMethod_GET,
-			Query:   uav,
+		cache.StoreError(errors.New("arse"), 10*time.Second, CacheQuery{
+			SST:    sst,
+			Method: sdp.RequestMethod_GET.Enum(),
+			Query:  &uav,
 		})
 
 		items, err := cache.Search(CacheQuery{
@@ -114,10 +114,10 @@ func TestStoreError(t *testing.T) {
 
 		uav := "foo"
 
-		cache.StoreError(errors.New("nope"), 10*time.Second, IndexValues{
-			SSTHash: sst.Hash(),
-			Method:  sdp.RequestMethod_GET,
-			Query:   uav,
+		cache.StoreError(errors.New("nope"), 10*time.Second, CacheQuery{
+			SST:    sst,
+			Method: sdp.RequestMethod_GET.Enum(),
+			Query:  &uav,
 		})
 
 		items, err := cache.Search(CacheQuery{
@@ -491,4 +491,51 @@ func TestCacheClear(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+}
+
+func TestToIndexValues(t *testing.T) {
+	cq := CacheQuery{
+		SST: SST{
+			SourceName: "foo",
+			Scope:      "foo",
+			Type:       "foo",
+		},
+	}
+
+	t.Run("with just SST", func(t *testing.T) {
+		iv := cq.ToIndexValues()
+
+		if iv.SSTHash != cq.SST.Hash() {
+			t.Error("hash mismatch")
+		}
+	})
+
+	t.Run("with SST & Method", func(t *testing.T) {
+		cq.Method = sdp.RequestMethod_GET.Enum()
+		iv := cq.ToIndexValues()
+
+		if iv.Method != sdp.RequestMethod_GET {
+			t.Errorf("expected %v, got %v", sdp.RequestMethod_GET, iv.Method)
+		}
+	})
+
+	t.Run("with SST & Query", func(t *testing.T) {
+		q := "query"
+		cq.Query = &q
+		iv := cq.ToIndexValues()
+
+		if iv.Query != "query" {
+			t.Errorf("expected %v, got %v", "query", iv.Query)
+		}
+	})
+
+	t.Run("with SST & UniqueAttributeValue", func(t *testing.T) {
+		q := "foo"
+		cq.UniqueAttributeValue = &q
+		iv := cq.ToIndexValues()
+
+		if iv.UniqueAttributeValue != "foo" {
+			t.Errorf("expected %v, got %v", "foo", iv.UniqueAttributeValue)
+		}
+	})
 }
