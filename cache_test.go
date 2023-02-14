@@ -452,3 +452,43 @@ func TestPointers(t *testing.T) {
 		t.Error("item was changed in cache")
 	}
 }
+
+func TestCacheClear(t *testing.T) {
+	cache := NewCache()
+
+	cache.Clear()
+
+	// Populate the cache
+	item := GenerateRandomItem()
+	cache.StoreItem(item, 500*time.Millisecond)
+
+	// Start purging just to make sure it doesn't break
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cache.StartPurger(ctx)
+
+	// Make sure the cache is populated
+	_, err := cache.Search(ToCacheQuery(item))
+
+	if err != nil {
+		t.Error(err)
+	}
+
+	// Clear the cache
+	cache.Clear()
+
+	// Make sure the cache is empty
+	_, err = cache.Search(ToCacheQuery(item))
+
+	if err == nil {
+		t.Error("expected error, cache not cleared")
+	}
+
+	// Make sure we can populate it again
+	cache.StoreItem(item, 500*time.Millisecond)
+	_, err = cache.Search(ToCacheQuery(item))
+
+	if err != nil {
+		t.Error(err)
+	}
+}

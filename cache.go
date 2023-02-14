@@ -145,11 +145,15 @@ type Cache struct {
 
 func NewCache() *Cache {
 	return &Cache{
-		indexes: make(map[SSTHash]*indexSet),
-		expiryIndex: btree.NewG(2, func(a, b *CachedResult) bool {
-			return a.Expiry.Before(b.Expiry)
-		}),
+		indexes:     make(map[SSTHash]*indexSet),
+		expiryIndex: newExpiryIndex(),
 	}
+}
+
+func newExpiryIndex() *btree.BTreeG[*CachedResult] {
+	return btree.NewG(2, func(a, b *CachedResult) bool {
+		return a.Expiry.Before(b.Expiry)
+	})
 }
 
 type indexSet struct {
@@ -348,6 +352,15 @@ func (c *Cache) StoreError(err error, duration time.Duration, indexValues IndexV
 	}
 
 	c.storeResult(res)
+}
+
+// Clear Delete all data in cache
+func (c *Cache) Clear() {
+	c.indexMutex.Lock()
+	defer c.indexMutex.Unlock()
+
+	c.indexes = make(map[SSTHash]*indexSet)
+	c.expiryIndex = newExpiryIndex()
 }
 
 func (c *Cache) storeResult(res CachedResult) {
