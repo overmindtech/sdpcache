@@ -1,6 +1,7 @@
 package sdpcache
 
 import (
+	"math/rand"
 	"testing"
 	"time"
 
@@ -9,34 +10,31 @@ import (
 
 const CacheDuration = 10 * time.Second
 
-// NewPopulatedCache Returns a newly populated cache and the tags of the first
-// item inserted
-func NewPopulatedCache(name string, numberItems int) (*Cache, Tags) {
+// NewPopulatedCache Returns a newly populated cache and the CacheQuery that
+// matches a randomly selected item in that cache
+func NewPopulatedCache(numberItems int) (*Cache, CacheQuery) {
 	// Populate the cache
-	c := Cache{
-		Name:        name,
-		MinWaitTime: 50 * time.Millisecond,
-	}
+	c := NewCache()
 
 	var item *sdp.Item
-	var tags Tags
-	var searchTags Tags
+	var q CacheQuery
+	exampleIndex := rand.Intn(numberItems)
 
 	for i := 0; i < numberItems; i++ {
-		item, tags = GenerateRandomItem()
+		item = GenerateRandomItem()
 
-		if i == 0 {
-			searchTags = tags
+		if i == exampleIndex {
+			q = ToCacheQuery(item)
 		}
 
-		c.StoreItem(item, CacheDuration, tags)
+		c.StoreItem(item, CacheDuration)
 	}
 
-	return &c, searchTags
+	return c, q
 }
 
 func BenchmarkCache1SingleItem(b *testing.B) {
-	c, tags := NewPopulatedCache(b.Name(), 1)
+	c, query := NewPopulatedCache(1)
 
 	var err error
 
@@ -44,7 +42,7 @@ func BenchmarkCache1SingleItem(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		// Search for a single item
-		_, err = c.Search(tags)
+		_, err = c.Search(query)
 
 		if err != nil {
 			b.Fatal(err)
@@ -53,7 +51,7 @@ func BenchmarkCache1SingleItem(b *testing.B) {
 }
 
 func BenchmarkCache10SingleItem(b *testing.B) {
-	c, tags := NewPopulatedCache(b.Name(), 10)
+	c, query := NewPopulatedCache(10)
 
 	var err error
 
@@ -61,7 +59,7 @@ func BenchmarkCache10SingleItem(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		// Search for a single item
-		_, err = c.Search(tags)
+		_, err = c.Search(query)
 
 		if err != nil {
 			b.Fatal(err)
@@ -70,7 +68,7 @@ func BenchmarkCache10SingleItem(b *testing.B) {
 }
 
 func BenchmarkCache100SingleItem(b *testing.B) {
-	c, tags := NewPopulatedCache(b.Name(), 100)
+	c, query := NewPopulatedCache(100)
 
 	var err error
 
@@ -78,7 +76,7 @@ func BenchmarkCache100SingleItem(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		// Search for a single item
-		_, err = c.Search(tags)
+		_, err = c.Search(query)
 
 		if err != nil {
 			b.Fatal(err)
@@ -87,7 +85,7 @@ func BenchmarkCache100SingleItem(b *testing.B) {
 }
 
 func BenchmarkCache1000SingleItem(b *testing.B) {
-	c, tags := NewPopulatedCache(b.Name(), 1000)
+	c, query := NewPopulatedCache(1000)
 
 	var err error
 
@@ -95,7 +93,7 @@ func BenchmarkCache1000SingleItem(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		// Search for a single item
-		_, err = c.Search(tags)
+		_, err = c.Search(query)
 
 		if err != nil {
 			b.Fatal(err)
@@ -103,147 +101,16 @@ func BenchmarkCache1000SingleItem(b *testing.B) {
 	}
 }
 
-var AllItemTags = Tags{
-	"all": "all",
-}
-
-func BenchmarkCache1AllItem(b *testing.B) {
-	c, _ := NewPopulatedCache(b.Name(), 1)
+func BenchmarkCache10_000SingleItem(b *testing.B) {
+	c, query := NewPopulatedCache(10_000)
 
 	var err error
 
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		// Search for all items
-		_, err = c.Search(AllItemTags)
-
-		if err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
-func BenchmarkCache10AllItem(b *testing.B) {
-	c, _ := NewPopulatedCache(b.Name(), 10)
-
-	var err error
-
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
-		// Search for all items
-		_, err = c.Search(AllItemTags)
-
-		if err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
-func BenchmarkCache100AllItem(b *testing.B) {
-	c, _ := NewPopulatedCache(b.Name(), 100)
-
-	var err error
-
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
-		// Search for all items
-		_, err = c.Search(AllItemTags)
-
-		if err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
-func BenchmarkCache1000AllItem(b *testing.B) {
-	c, _ := NewPopulatedCache(b.Name(), 1000)
-
-	var err error
-
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
-		// Search for all items
-		_, err = c.Search(AllItemTags)
-
-		if err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
-var ManyTags = Tags{
-	"all": "all",
-	"foo": "bar",
-	"bar": "baz",
-	"yes": "yes",
-	"no":  "no",
-}
-
-func BenchmarkCache1AllItemManyTags(b *testing.B) {
-	c, _ := NewPopulatedCache(b.Name(), 1)
-
-	var err error
-
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
-		// Search for all items
-		_, err = c.Search(ManyTags)
-
-		if err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
-func BenchmarkCache10AllItemManyTags(b *testing.B) {
-	c, _ := NewPopulatedCache(b.Name(), 10)
-
-	var err error
-
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
-		// Search for all items
-		_, err = c.Search(ManyTags)
-
-		if err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
-func BenchmarkCache100AllItemManyTags(b *testing.B) {
-	c, _ := NewPopulatedCache(b.Name(), 100)
-
-	var err error
-
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
-		// Search for all items
-		_, err = c.Search(ManyTags)
-
-		if err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
-func BenchmarkCache1000AllItemManyTags(b *testing.B) {
-	c, _ := NewPopulatedCache(b.Name(), 1000)
-
-	var err error
-
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
-		// Search for all items
-		_, err = c.Search(ManyTags)
+		// Search for a single item
+		_, err = c.Search(query)
 
 		if err != nil {
 			b.Fatal(err)

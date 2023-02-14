@@ -35,7 +35,7 @@ const MaxLinkedItemRequests = 10
 
 // GenerateRandomItem Generates a random item and the tags for this item. The
 // tags include the name, type and a tag called "all" with a value of "all"
-func GenerateRandomItem() (*sdp.Item, Tags) {
+func GenerateRandomItem() *sdp.Item {
 	attrs := make(map[string]interface{})
 
 	name := randSeq(rand.Intn(MaxAttributeValueLength))
@@ -93,17 +93,7 @@ func GenerateRandomItem() (*sdp.Item, Tags) {
 		},
 	}
 
-	tags := Tags{
-		"name": name,
-		"type": typ,
-		"all":  "all",
-		"foo":  "bar",
-		"bar":  "baz",
-		"yes":  "yes",
-		"no":   "no",
-	}
-
-	return &item, tags
+	return &item
 }
 
 var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
