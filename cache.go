@@ -442,7 +442,7 @@ func sortString(indexValue string, item *sdp.Item) string {
 type PurgeStats struct {
 	// How many items were timed out of the cache
 	NumPurged int
-	// How long the purging took overall
+	// How long purging took overall
 	TimeTaken time.Duration
 	// The expiry time of the next item to expire. If there are no more items in
 	// the cache, this will be nil
