@@ -4,7 +4,7 @@ go 1.19
 
 require (
 	github.com/google/btree v1.1.2
-	github.com/overmindtech/sdp-go v0.16.0
+	github.com/overmindtech/sdp-go v0.16.1
 	google.golang.org/protobuf v1.28.1
 )
 
