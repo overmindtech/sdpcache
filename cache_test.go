@@ -80,8 +80,8 @@ func TestStoreError(t *testing.T) {
 	t.Run("with items and an error for the same query", func(t *testing.T) {
 		// Add an item with the same details as above
 		item := GenerateRandomItem()
-		item.Metadata.SourceRequest.Method = sdp.RequestMethod_GET
-		item.Metadata.SourceRequest.Query = "foo"
+		item.Metadata.SourceQuery.Method = sdp.RequestMethod_GET
+		item.Metadata.SourceQuery.Query = "foo"
 		item.Metadata.SourceName = "foo"
 		item.Scope = "foo"
 		item.Type = "foo"
@@ -92,8 +92,8 @@ func TestStoreError(t *testing.T) {
 				Scope:      item.Scope,
 				Type:       item.Type,
 			},
-			Method: &item.Metadata.SourceRequest.Method,
-			Query:  &item.Metadata.SourceRequest.Query,
+			Method: &item.Metadata.SourceQuery.Method,
+			Query:  &item.Metadata.SourceQuery.Query,
 		})
 
 		if len(items) > 0 {
@@ -146,8 +146,8 @@ func ToCacheQuery(item *sdp.Item) CacheQuery {
 			Type:       item.Type,
 		},
 		UniqueAttributeValue: &uav,
-		Method:               &item.Metadata.SourceRequest.Method,
-		Query:                &item.Metadata.SourceRequest.Query,
+		Method:               &item.Metadata.SourceQuery.Method,
+		Query:                &item.Metadata.SourceQuery.Query,
 	}
 }
 
@@ -198,8 +198,8 @@ func TestPurge(t *testing.T) {
 				Type:       i.Item.Type,
 			},
 			UniqueAttributeValue: &uav,
-			Method:               &i.Item.Metadata.SourceRequest.Method,
-			Query:                &i.Item.Metadata.SourceRequest.Query,
+			Method:               &i.Item.Metadata.SourceQuery.Method,
+			Query:                &i.Item.Metadata.SourceQuery.Query,
 		})
 
 		if err != nil {

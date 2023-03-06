@@ -357,9 +357,9 @@ func (c *Cache) StoreItem(item *sdp.Item, duration time.Duration) {
 	}
 
 	if itemCopy.Metadata != nil {
-		if itemCopy.Metadata.SourceRequest != nil {
-			res.IndexValues.Method = item.Metadata.SourceRequest.Method
-			res.IndexValues.Query = item.Metadata.SourceRequest.Query
+		if itemCopy.Metadata.SourceQuery != nil {
+			res.IndexValues.Method = item.Metadata.SourceQuery.Method
+			res.IndexValues.Query = item.Metadata.SourceQuery.Query
 		}
 
 		res.IndexValues.SSTHash = SST{
