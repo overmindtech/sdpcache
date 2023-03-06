@@ -31,7 +31,7 @@ const MaxAttributes = 30
 const MaxAttributeKeyLength = 20
 const MaxAttributeValueLength = 50
 const MaxLinkedItems = 10
-const MaxLinkedItemRequests = 10
+const MaxLinkedItemQueries = 10
 
 // GenerateRandomItem Generates a random item and the tags for this item. The
 // tags include the name, type and a tag called "all" with a value of "all"
@@ -59,10 +59,10 @@ func GenerateRandomItem() *sdp.Item {
 		}
 	}
 
-	linkedItemRequests := make([]*sdp.ItemRequest, rand.Intn(MaxLinkedItemRequests))
+	linkedItemQueries := make([]*sdp.Query, rand.Intn(MaxLinkedItemQueries))
 
-	for i := range linkedItemRequests {
-		linkedItemRequests[i] = &sdp.ItemRequest{
+	for i := range linkedItemQueries {
+		linkedItemQueries[i] = &sdp.Query{
 			Type:      randSeq(rand.Intn(MaxAttributeKeyLength)),
 			Method:    sdp.RequestMethod(rand.Intn(3)),
 			Query:     randSeq(rand.Intn(MaxAttributeValueLength)),
@@ -72,15 +72,15 @@ func GenerateRandomItem() *sdp.Item {
 	}
 
 	item := sdp.Item{
-		Type:               typ,
-		UniqueAttribute:    "name",
-		Attributes:         attributes,
-		Scope:              scope,
-		LinkedItemRequests: linkedItemRequests,
-		LinkedItems:        linkedItems,
+		Type:              typ,
+		UniqueAttribute:   "name",
+		Attributes:        attributes,
+		Scope:             scope,
+		LinkedItemQueries: linkedItemQueries,
+		LinkedItems:       linkedItems,
 		Metadata: &sdp.Metadata{
 			SourceName: randSeq(rand.Intn(MaxAttributeKeyLength)),
-			SourceRequest: &sdp.ItemRequest{
+			SourceQuery: &sdp.Query{
 				Type:      typ,
 				Method:    sdp.RequestMethod_GET,
 				Query:     name,
