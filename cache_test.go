@@ -58,13 +58,13 @@ func TestStoreError(t *testing.T) {
 
 		cache.StoreError(errors.New("arse"), 10*time.Second, CacheQuery{
 			SST:    sst,
-			Method: sdp.RequestMethod_GET.Enum(),
+			Method: sdp.QueryMethod_GET.Enum(),
 			Query:  &uav,
 		})
 
 		items, err := cache.Search(CacheQuery{
 			SST:    sst,
-			Method: sdp.RequestMethod_GET.Enum(),
+			Method: sdp.QueryMethod_GET.Enum(),
 			Query:  &uav,
 		})
 
@@ -80,7 +80,7 @@ func TestStoreError(t *testing.T) {
 	t.Run("with items and an error for the same query", func(t *testing.T) {
 		// Add an item with the same details as above
 		item := GenerateRandomItem()
-		item.Metadata.SourceQuery.Method = sdp.RequestMethod_GET
+		item.Metadata.SourceQuery.Method = sdp.QueryMethod_GET
 		item.Metadata.SourceQuery.Query = "foo"
 		item.Metadata.SourceName = "foo"
 		item.Scope = "foo"
@@ -116,13 +116,13 @@ func TestStoreError(t *testing.T) {
 
 		cache.StoreError(errors.New("nope"), 10*time.Second, CacheQuery{
 			SST:    sst,
-			Method: sdp.RequestMethod_GET.Enum(),
+			Method: sdp.QueryMethod_GET.Enum(),
 			Query:  &uav,
 		})
 
 		items, err := cache.Search(CacheQuery{
 			SST:    sst,
-			Method: sdp.RequestMethod_GET.Enum(),
+			Method: sdp.QueryMethod_GET.Enum(),
 			Query:  &uav,
 		})
 
@@ -511,11 +511,11 @@ func TestToIndexValues(t *testing.T) {
 	})
 
 	t.Run("with SST & Method", func(t *testing.T) {
-		cq.Method = sdp.RequestMethod_GET.Enum()
+		cq.Method = sdp.QueryMethod_GET.Enum()
 		iv := cq.ToIndexValues()
 
-		if iv.Method != sdp.RequestMethod_GET {
-			t.Errorf("expected %v, got %v", sdp.RequestMethod_GET, iv.Method)
+		if iv.Method != sdp.QueryMethod_GET {
+			t.Errorf("expected %v, got %v", sdp.QueryMethod_GET, iv.Method)
 		}
 	})
 

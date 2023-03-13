@@ -16,14 +16,14 @@ import (
 type IndexValues struct {
 	SSTHash              SSTHash
 	UniqueAttributeValue string
-	Method               sdp.RequestMethod
+	Method               sdp.QueryMethod
 	Query                string
 }
 
 type CacheQuery struct {
 	SST                  SST // *required
 	UniqueAttributeValue *string
-	Method               *sdp.RequestMethod
+	Method               *sdp.QueryMethod
 	Query                *string
 }
 
