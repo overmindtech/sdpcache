@@ -4,6 +4,7 @@ import (
 	"math/rand"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/overmindtech/sdp-go"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -64,12 +65,14 @@ func GenerateRandomItem() *sdp.Item {
 	for i := range linkedItemQueries {
 		linkedItemQueries[i] = &sdp.Query{
 			Type:      randSeq(rand.Intn(MaxAttributeKeyLength)),
-			Method:    sdp.RequestMethod(rand.Intn(3)),
+			Method:    sdp.QueryMethod(rand.Intn(3)),
 			Query:     randSeq(rand.Intn(MaxAttributeValueLength)),
 			LinkDepth: rand.Uint32(),
 			Scope:     randSeq(rand.Intn(MaxAttributeKeyLength)),
 		}
 	}
+
+	queryUuid := uuid.New()
 
 	item := sdp.Item{
 		Type:              typ,
@@ -82,10 +85,11 @@ func GenerateRandomItem() *sdp.Item {
 			SourceName: randSeq(rand.Intn(MaxAttributeKeyLength)),
 			SourceQuery: &sdp.Query{
 				Type:      typ,
-				Method:    sdp.RequestMethod_GET,
+				Method:    sdp.QueryMethod_GET,
 				Query:     name,
 				LinkDepth: 1,
 				Scope:     scope,
+				UUID:      queryUuid[:],
 			},
 			Timestamp:             timestamppb.New(time.Now()),
 			SourceDuration:        durationpb.New(time.Millisecond * time.Duration(rand.Int63())),
