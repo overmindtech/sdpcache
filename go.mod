@@ -14,7 +14,6 @@ require (
 	github.com/getsentry/sentry-go v0.20.0 // indirect
 	github.com/go-logr/logr v1.2.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/klauspost/compress v1.16.0 // indirect
 	github.com/minio/highwayhash v1.0.2 // indirect
 	github.com/nats-io/jwt/v2 v2.3.0 // indirect
 	github.com/nats-io/nats.go v1.25.0 // indirect
@@ -27,6 +26,5 @@ require (
 	golang.org/x/crypto v0.8.0 // indirect
 	golang.org/x/sys v0.7.0 // indirect
 	golang.org/x/text v0.9.0 // indirect
-	golang.org/x/time v0.3.0 // indirect
 	gopkg.in/square/go-jose.v2 v2.6.0 // indirect
 )
