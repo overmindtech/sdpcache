@@ -5,12 +5,13 @@ go 1.19
 require (
 	github.com/google/btree v1.1.2
 	github.com/google/uuid v1.3.0
-	github.com/overmindtech/sdp-go v0.26.0
+	github.com/overmindtech/sdp-go v0.26.3
 	google.golang.org/protobuf v1.30.0
 )
 
 require (
 	github.com/auth0/go-jwt-middleware/v2 v2.1.0 // indirect
+	github.com/bufbuild/connect-go v1.7.0 // indirect
 	github.com/getsentry/sentry-go v0.20.0 // indirect
 	github.com/go-logr/logr v1.2.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
