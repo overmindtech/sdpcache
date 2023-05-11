@@ -5,7 +5,7 @@ go 1.19
 require (
 	github.com/google/btree v1.1.2
 	github.com/google/uuid v1.3.0
-	github.com/overmindtech/sdp-go v0.28.2
+	github.com/overmindtech/sdp-go v0.30.0
 	google.golang.org/protobuf v1.30.0
 )
 
@@ -22,8 +22,8 @@ require (
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/sirupsen/logrus v1.9.0 // indirect
-	go.opentelemetry.io/otel v1.14.0 // indirect
-	go.opentelemetry.io/otel/trace v1.14.0 // indirect
+	go.opentelemetry.io/otel v1.15.1 // indirect
+	go.opentelemetry.io/otel/trace v1.15.1 // indirect
 	golang.org/x/crypto v0.8.0 // indirect
 	golang.org/x/sys v0.7.0 // indirect
 	golang.org/x/text v0.9.0 // indirect

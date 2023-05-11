@@ -50,26 +50,29 @@ func GenerateRandomItem() *sdp.Item {
 
 	attributes, _ := sdp.ToAttributes(attrs)
 
-	linkedItems := make([]*sdp.Reference, rand.Intn(MaxLinkedItems))
+	linkedItems := make([]*sdp.LinkedItem, rand.Intn(MaxLinkedItems))
 
 	for i := range linkedItems {
-		linkedItems[i] = &sdp.Reference{
+		linkedItems[i] = &sdp.LinkedItem{Item: &sdp.Reference{
 			Type:                 randSeq(rand.Intn(MaxAttributeKeyLength)),
 			UniqueAttributeValue: randSeq(rand.Intn(MaxAttributeValueLength)),
 			Scope:                randSeq(rand.Intn(MaxAttributeKeyLength)),
-		}
+		}}
 	}
 
-	linkedItemQueries := make([]*sdp.Query, rand.Intn(MaxLinkedItemQueries))
+	linkedItemQueries := make([]*sdp.LinkedItemQuery, rand.Intn(MaxLinkedItemQueries))
 
 	for i := range linkedItemQueries {
-		linkedItemQueries[i] = &sdp.Query{
-			Type:      randSeq(rand.Intn(MaxAttributeKeyLength)),
-			Method:    sdp.QueryMethod(rand.Intn(3)),
-			Query:     randSeq(rand.Intn(MaxAttributeValueLength)),
-			LinkDepth: rand.Uint32(),
-			Scope:     randSeq(rand.Intn(MaxAttributeKeyLength)),
-		}
+		linkedItemQueries[i] = &sdp.LinkedItemQuery{Query: &sdp.Query{
+			Type:   randSeq(rand.Intn(MaxAttributeKeyLength)),
+			Method: sdp.QueryMethod(rand.Intn(3)),
+			Query:  randSeq(rand.Intn(MaxAttributeValueLength)),
+			RecursionBehaviour: &sdp.Query_RecursionBehaviour{
+				LinkDepth:                  rand.Uint32(),
+				FollowOnlyBlastPropagation: rand.Intn(2) == 0,
+			},
+			Scope: randSeq(rand.Intn(MaxAttributeKeyLength)),
+		}}
 	}
 
 	queryUuid := uuid.New()
@@ -84,12 +87,14 @@ func GenerateRandomItem() *sdp.Item {
 		Metadata: &sdp.Metadata{
 			SourceName: randSeq(rand.Intn(MaxAttributeKeyLength)),
 			SourceQuery: &sdp.Query{
-				Type:      typ,
-				Method:    sdp.QueryMethod_GET,
-				Query:     name,
-				LinkDepth: 1,
-				Scope:     scope,
-				UUID:      queryUuid[:],
+				Type:   typ,
+				Method: sdp.QueryMethod_GET,
+				Query:  name,
+				RecursionBehaviour: &sdp.Query_RecursionBehaviour{
+					LinkDepth: 1,
+				},
+				Scope: scope,
+				UUID:  queryUuid[:],
 			},
 			Timestamp:             timestamppb.New(time.Now()),
 			SourceDuration:        durationpb.New(time.Millisecond * time.Duration(rand.Int63())),
