@@ -5,7 +5,7 @@ go 1.21
 require (
 	github.com/google/btree v1.1.2
 	github.com/google/uuid v1.3.1
-	github.com/overmindtech/sdp-go v0.46.2
+	github.com/overmindtech/sdp-go v0.47.1
 	google.golang.org/protobuf v1.31.0
 )
 
