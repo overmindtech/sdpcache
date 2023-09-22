@@ -11,6 +11,8 @@ import (
 
 	"github.com/google/btree"
 	"github.com/overmindtech/sdp-go"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type IndexValues struct {
@@ -25,6 +27,34 @@ type CacheQuery struct {
 	UniqueAttributeValue *string
 	Method               *sdp.QueryMethod
 	Query                *string
+}
+
+func CacheQueryFromSDP(q *sdp.Query, srcName string) CacheQuery {
+	cq := CacheQuery{
+		SST: SST{
+			SourceName: srcName,
+			Scope:      q.Scope,
+			Type:       q.Type,
+		},
+	}
+
+	switch q.Method {
+	case sdp.QueryMethod_GET:
+		// With a Get query we need just the one specific item, so also
+		// filter on uniqueAttributeValue
+		cq.UniqueAttributeValue = &q.Query
+	case sdp.QueryMethod_LIST:
+		// In the case of a find, we just want everything that was found in
+		// the last find, so we only care about the method
+		cq.Method = &q.Method
+	case sdp.QueryMethod_SEARCH:
+		// For a search, we only want to get from the cache items that were
+		// found using search, and with the exact same query
+		cq.Method = &q.Method
+		cq.Query = &q.Query
+	}
+
+	return cq
 }
 
 func (cq CacheQuery) String() string {
@@ -195,6 +225,108 @@ func newIndexSet() *indexSet {
 			return sortString(a.IndexValues.Query, a.Item) < sortString(b.IndexValues.Query, b.Item)
 		}),
 	}
+}
+
+// Lookup returns true/false whether or not the cache has a result for the given
+// query. If there are results, they will be returned as slice of `sdp.Item`s or
+// an `*sdp.QueryError`.
+func (c *Cache) Lookup(ctx context.Context, srcName string, q *sdp.Query) (bool, []*sdp.Item, *sdp.QueryError) {
+	span := trace.SpanFromContext(ctx)
+	if q == nil {
+		span.SetAttributes(
+			attribute.String("om.cache.result", "no query"),
+			attribute.Bool("om.cache.hit", false),
+		)
+		return false, nil, nil
+	}
+
+	if q.IgnoreCache {
+		span.SetAttributes(
+			attribute.String("om.cache.result", "ignore cache"),
+			attribute.Bool("om.cache.hit", false),
+		)
+		return false, nil, nil
+	}
+
+	query := CacheQueryFromSDP(q, srcName)
+	items, err := c.Search(query)
+
+	if err != nil {
+		var qErr *sdp.QueryError
+		if errors.Is(err, ErrCacheNotFound) {
+			// If nothing was found then execute the search against the sources
+			span.SetAttributes(
+				attribute.String("om.cache.result", "cache miss"),
+				attribute.Bool("om.cache.hit", false),
+			)
+			return false, nil, nil
+		} else if errors.As(err, &qErr) {
+			// Add relevant info
+			qErr.Scope = q.Scope
+			qErr.UUID = q.UUID
+			qErr.SourceName = srcName
+			qErr.ItemType = q.Type
+
+			if qErr.ErrorType == sdp.QueryError_NOTFOUND {
+				span.SetAttributes(attribute.String("om.cache.result", "cache hit: item not found"))
+			} else {
+				span.SetAttributes(
+					attribute.String("om.cache.result", "cache hit: QueryError"),
+					attribute.String("om.cache.error", err.Error()),
+				)
+			}
+
+			span.SetAttributes(attribute.Bool("om.cache.hit", true))
+			return true, nil, qErr
+		} else {
+			// If it's an unknown error, convert it to SDP and skip this source
+			qErr = &sdp.QueryError{
+				UUID:        q.UUID,
+				ErrorType:   sdp.QueryError_OTHER,
+				ErrorString: err.Error(),
+				Scope:       q.Scope,
+				SourceName:  srcName,
+				ItemType:    q.Type,
+			}
+
+			span.SetAttributes(
+				attribute.String("om.cache.error", err.Error()),
+				attribute.String("om.cache.result", "cache hit: unknown QueryError"),
+				attribute.Bool("om.cache.hit", true),
+			)
+
+			return true, nil, qErr
+		}
+	}
+
+	if q.Method == sdp.QueryMethod_GET {
+		// If the method was Get we should validate that we have
+		// only pulled one thing from the cache
+
+		if len(items) < 2 {
+			span.SetAttributes(
+				attribute.String("om.cache.result", "cache hit: 1 item"),
+				attribute.Int("om.cache.numItems", len(items)),
+				attribute.Bool("om.cache.hit", true),
+			)
+			return true, items, nil
+		} else {
+			span.SetAttributes(
+				attribute.String("om.cache.result", "cache returned >1 value, purging and continuing"),
+				attribute.Int("om.cache.numItems", len(items)),
+				attribute.Bool("om.cache.hit", false),
+			)
+			c.Delete(query)
+			return false, nil, nil
+		}
+	}
+	span.SetAttributes(
+		attribute.String("om.cache.result", "cache hit: multiple items"),
+		attribute.Int("om.cache.numItems", len(items)),
+		attribute.Bool("om.cache.hit", true),
+	)
+
+	return true, items, nil
 }
 
 // Search Runs a given query against the cache. If a cached error is found it
