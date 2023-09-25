@@ -29,32 +29,36 @@ type CacheQuery struct {
 	Query                *string
 }
 
-func CacheQueryFromSDP(q *sdp.Query, srcName string) CacheQuery {
+func CacheQueryFromParts(srcName string, method sdp.QueryMethod, scope string, typ string, query string, ignoreCache bool) CacheQuery {
 	cq := CacheQuery{
 		SST: SST{
 			SourceName: srcName,
-			Scope:      q.Scope,
-			Type:       q.Type,
+			Scope:      scope,
+			Type:       typ,
 		},
 	}
 
-	switch q.Method {
+	switch method {
 	case sdp.QueryMethod_GET:
 		// With a Get query we need just the one specific item, so also
 		// filter on uniqueAttributeValue
-		cq.UniqueAttributeValue = &q.Query
+		cq.UniqueAttributeValue = &query
 	case sdp.QueryMethod_LIST:
 		// In the case of a find, we just want everything that was found in
 		// the last find, so we only care about the method
-		cq.Method = &q.Method
+		cq.Method = &method
 	case sdp.QueryMethod_SEARCH:
 		// For a search, we only want to get from the cache items that were
 		// found using search, and with the exact same query
-		cq.Method = &q.Method
-		cq.Query = &q.Query
+		cq.Method = &method
+		cq.Query = &query
 	}
 
 	return cq
+}
+
+func CacheQueryFromSDP(q *sdp.Query, srcName string) CacheQuery {
+	return CacheQueryFromParts(srcName, q.Method, q.Scope, q.Type, q.Query, q.IgnoreCache)
 }
 
 func (cq CacheQuery) String() string {
@@ -230,17 +234,9 @@ func newIndexSet() *indexSet {
 // Lookup returns true/false whether or not the cache has a result for the given
 // query. If there are results, they will be returned as slice of `sdp.Item`s or
 // an `*sdp.QueryError`.
-func (c *Cache) Lookup(ctx context.Context, srcName string, q *sdp.Query) (bool, []*sdp.Item, *sdp.QueryError) {
+func (c *Cache) Lookup(ctx context.Context, srcName string, method sdp.QueryMethod, scope string, typ string, query string, ignoreCache bool) (bool, []*sdp.Item, *sdp.QueryError) {
 	span := trace.SpanFromContext(ctx)
-	if q == nil {
-		span.SetAttributes(
-			attribute.String("om.cache.result", "no query"),
-			attribute.Bool("om.cache.hit", false),
-		)
-		return false, nil, nil
-	}
-
-	if q.IgnoreCache {
+	if ignoreCache {
 		span.SetAttributes(
 			attribute.String("om.cache.result", "ignore cache"),
 			attribute.Bool("om.cache.hit", false),
@@ -248,8 +244,8 @@ func (c *Cache) Lookup(ctx context.Context, srcName string, q *sdp.Query) (bool,
 		return false, nil, nil
 	}
 
-	query := CacheQueryFromSDP(q, srcName)
-	items, err := c.Search(query)
+	cq := CacheQueryFromParts(srcName, method, scope, typ, query, ignoreCache)
+	items, err := c.Search(cq)
 
 	if err != nil {
 		var qErr *sdp.QueryError
@@ -262,10 +258,9 @@ func (c *Cache) Lookup(ctx context.Context, srcName string, q *sdp.Query) (bool,
 			return false, nil, nil
 		} else if errors.As(err, &qErr) {
 			// Add relevant info
-			qErr.Scope = q.Scope
-			qErr.UUID = q.UUID
+			qErr.Scope = scope
 			qErr.SourceName = srcName
-			qErr.ItemType = q.Type
+			qErr.ItemType = typ
 
 			if qErr.ErrorType == sdp.QueryError_NOTFOUND {
 				span.SetAttributes(attribute.String("om.cache.result", "cache hit: item not found"))
@@ -281,12 +276,11 @@ func (c *Cache) Lookup(ctx context.Context, srcName string, q *sdp.Query) (bool,
 		} else {
 			// If it's an unknown error, convert it to SDP and skip this source
 			qErr = &sdp.QueryError{
-				UUID:        q.UUID,
 				ErrorType:   sdp.QueryError_OTHER,
 				ErrorString: err.Error(),
-				Scope:       q.Scope,
+				Scope:       scope,
 				SourceName:  srcName,
-				ItemType:    q.Type,
+				ItemType:    typ,
 			}
 
 			span.SetAttributes(
@@ -299,7 +293,7 @@ func (c *Cache) Lookup(ctx context.Context, srcName string, q *sdp.Query) (bool,
 		}
 	}
 
-	if q.Method == sdp.QueryMethod_GET {
+	if method == sdp.QueryMethod_GET {
 		// If the method was Get we should validate that we have
 		// only pulled one thing from the cache
 
@@ -316,7 +310,7 @@ func (c *Cache) Lookup(ctx context.Context, srcName string, q *sdp.Query) (bool,
 				attribute.Int("om.cache.numItems", len(items)),
 				attribute.Bool("om.cache.hit", false),
 			)
-			c.Delete(query)
+			c.Delete(cq)
 			return false, nil, nil
 		}
 	}
