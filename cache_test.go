@@ -539,3 +539,40 @@ func TestToIndexValues(t *testing.T) {
 		}
 	})
 }
+
+func TestLookup(t *testing.T) {
+	ctx := context.Background()
+	cache := NewCache()
+
+	item := GenerateRandomItem()
+	cache.StoreItem(item, 10*time.Second)
+
+	// ignore the cache
+	cacheHit, cachedItems, err := cache.Lookup(ctx, item.Metadata.SourceName, sdp.QueryMethod_GET, item.Scope, item.Type, item.UniqueAttributeValue(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cacheHit {
+		t.Error("expected cache miss, got hit")
+	}
+	if cachedItems != nil {
+		t.Errorf("expected nil items, got %v", cachedItems)
+	}
+
+	// Lookup the item
+	cacheHit, cachedItems, err = cache.Lookup(ctx, item.Metadata.SourceName, sdp.QueryMethod_GET, item.Scope, item.Type, item.UniqueAttributeValue(), false)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cacheHit {
+		t.Fatal("expected cache hit, got miss")
+	}
+	if len(cachedItems) != 1 {
+		t.Fatalf("expected 1 item, got %v", len(cachedItems))
+	}
+
+	if cachedItems[0].Type != item.Type {
+		t.Errorf("expected type %v, got %v", item.Type, cachedItems[0].Type)
+	}
+}
