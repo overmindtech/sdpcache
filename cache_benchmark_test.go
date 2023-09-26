@@ -12,25 +12,26 @@ const CacheDuration = 10 * time.Second
 
 // NewPopulatedCache Returns a newly populated cache and the CacheQuery that
 // matches a randomly selected item in that cache
-func NewPopulatedCache(numberItems int) (*Cache, CacheQuery) {
+func NewPopulatedCache(numberItems int) (*Cache, CacheKey) {
 	// Populate the cache
 	c := NewCache()
 
 	var item *sdp.Item
-	var q CacheQuery
+	var exampleCk CacheKey
 	exampleIndex := rand.Intn(numberItems)
 
 	for i := 0; i < numberItems; i++ {
 		item = GenerateRandomItem()
+		ck := CacheKeyFromQuery(item.Metadata.SourceQuery, item.Metadata.SourceName)
 
 		if i == exampleIndex {
-			q = ToCacheQuery(item)
+			exampleCk = ck
 		}
 
-		c.StoreItem(item, CacheDuration)
+		c.StoreItem(item, CacheDuration, ck)
 	}
 
-	return c, q
+	return c, exampleCk
 }
 
 func BenchmarkCache1SingleItem(b *testing.B) {
