@@ -29,7 +29,7 @@ type CacheQuery struct {
 	Query                *string
 }
 
-func CacheQueryFromParts(srcName string, method sdp.QueryMethod, scope string, typ string, query string, ignoreCache bool) CacheQuery {
+func CacheQueryFromParts(srcName string, method sdp.QueryMethod, scope string, typ string, query string) CacheQuery {
 	cq := CacheQuery{
 		SST: SST{
 			SourceName: srcName,
@@ -58,7 +58,7 @@ func CacheQueryFromParts(srcName string, method sdp.QueryMethod, scope string, t
 }
 
 func CacheQueryFromSDP(q *sdp.Query, srcName string) CacheQuery {
-	return CacheQueryFromParts(srcName, q.Method, q.Scope, q.Type, q.Query, q.IgnoreCache)
+	return CacheQueryFromParts(srcName, q.Method, q.Scope, q.Type, q.Query)
 }
 
 func (cq CacheQuery) String() string {
@@ -244,7 +244,7 @@ func (c *Cache) Lookup(ctx context.Context, srcName string, method sdp.QueryMeth
 		return false, nil, nil
 	}
 
-	cq := CacheQueryFromParts(srcName, method, scope, typ, query, ignoreCache)
+	cq := CacheQueryFromParts(srcName, method, scope, typ, query)
 	items, err := c.Search(cq)
 
 	if err != nil {
