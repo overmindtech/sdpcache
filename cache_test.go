@@ -3,6 +3,7 @@ package sdpcache
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -15,10 +16,10 @@ func TestStoreItem(t *testing.T) {
 
 	t.Run("one match", func(t *testing.T) {
 		item := GenerateRandomItem()
-		cache.StoreItem(item, 10*time.Second)
+		ck := CacheKeyFromQuery(item.Metadata.SourceQuery, item.Metadata.SourceName)
+		cache.StoreItem(item, 10*time.Second, ck)
 
-		results, err := cache.Search(ToCacheQuery(item))
-
+		results, err := cache.Search(ck)
 		if err != nil {
 			t.Error(err)
 		}
@@ -30,16 +31,37 @@ func TestStoreItem(t *testing.T) {
 
 	t.Run("another match", func(t *testing.T) {
 		item := GenerateRandomItem()
-		cache.StoreItem(item, 10*time.Second)
+		ck := CacheKeyFromQuery(item.Metadata.SourceQuery, item.Metadata.SourceName)
+		cache.StoreItem(item, 10*time.Second, ck)
 
-		results, err := cache.Search(ToCacheQuery(item))
-
+		results, err := cache.Search(ck)
 		if err != nil {
 			t.Error(err)
 		}
 
 		if len(results) != 1 {
 			t.Errorf("expected 1 result, got %v", len(results))
+		}
+	})
+
+	t.Run("different scope", func(t *testing.T) {
+		item := GenerateRandomItem()
+		ck := CacheKeyFromQuery(item.Metadata.SourceQuery, item.Metadata.SourceName)
+		cache.StoreItem(item, 10*time.Second, ck)
+
+		ck.SST.Scope = fmt.Sprintf("new scope %v", ck.SST.Scope)
+
+		results, err := cache.Search(ck)
+		if err != nil {
+			if !errors.Is(err, ErrCacheNotFound) {
+				t.Error(err)
+			} else {
+				t.Log("expected cache miss")
+			}
+		}
+
+		if len(results) != 0 {
+			t.Errorf("expected 0 result, got %v", results)
 		}
 	})
 }
@@ -56,13 +78,13 @@ func TestStoreError(t *testing.T) {
 
 		uav := "foo"
 
-		cache.StoreError(errors.New("arse"), 10*time.Second, CacheQuery{
+		cache.StoreError(errors.New("arse"), 10*time.Second, CacheKey{
 			SST:    sst,
 			Method: sdp.QueryMethod_GET.Enum(),
 			Query:  &uav,
 		})
 
-		items, err := cache.Search(CacheQuery{
+		items, err := cache.Search(CacheKey{
 			SST:    sst,
 			Method: sdp.QueryMethod_GET.Enum(),
 			Query:  &uav,
@@ -86,15 +108,8 @@ func TestStoreError(t *testing.T) {
 		item.Scope = "foo"
 		item.Type = "foo"
 
-		items, err := cache.Search(CacheQuery{
-			SST: SST{
-				SourceName: item.Metadata.SourceName,
-				Scope:      item.Scope,
-				Type:       item.Type,
-			},
-			Method: &item.Metadata.SourceQuery.Method,
-			Query:  &item.Metadata.SourceQuery.Query,
-		})
+		ck := CacheKeyFromQuery(item.Metadata.SourceQuery, item.Metadata.SourceName)
+		items, err := cache.Search(ck)
 
 		if len(items) > 0 {
 			t.Errorf("expected 0 items, got %v", len(items))
@@ -114,13 +129,13 @@ func TestStoreError(t *testing.T) {
 
 		uav := "foo"
 
-		cache.StoreError(errors.New("nope"), 10*time.Second, CacheQuery{
+		cache.StoreError(errors.New("nope"), 10*time.Second, CacheKey{
 			SST:    sst,
 			Method: sdp.QueryMethod_GET.Enum(),
 			Query:  &uav,
 		})
 
-		items, err := cache.Search(CacheQuery{
+		items, err := cache.Search(CacheKey{
 			SST:    sst,
 			Method: sdp.QueryMethod_GET.Enum(),
 			Query:  &uav,
@@ -134,21 +149,6 @@ func TestStoreError(t *testing.T) {
 			t.Error("expected error, got nil")
 		}
 	})
-}
-
-func ToCacheQuery(item *sdp.Item) CacheQuery {
-	uav := item.UniqueAttributeValue()
-
-	return CacheQuery{
-		SST: SST{
-			SourceName: item.Metadata.SourceName,
-			Scope:      item.Scope,
-			Type:       item.Type,
-		},
-		UniqueAttributeValue: &uav,
-		Method:               &item.Metadata.SourceQuery.Method,
-		Query:                &item.Metadata.SourceQuery.Query,
-	}
 }
 
 func TestPurge(t *testing.T) {
@@ -185,23 +185,14 @@ func TestPurge(t *testing.T) {
 	}
 
 	for _, i := range cachedItems {
-		cache.StoreItem(i.Item, time.Until(i.Expiry))
+		ck := CacheKeyFromQuery(i.Item.Metadata.SourceQuery, i.Item.Metadata.SourceName)
+		cache.StoreItem(i.Item, time.Until(i.Expiry), ck)
 	}
 
 	// Make sure all the items are in the cache
 	for _, i := range cachedItems {
-		uav := i.Item.UniqueAttributeValue()
-		items, err := cache.Search(CacheQuery{
-			SST: SST{
-				SourceName: i.Item.Metadata.SourceName,
-				Scope:      i.Item.Scope,
-				Type:       i.Item.Type,
-			},
-			UniqueAttributeValue: &uav,
-			Method:               &i.Item.Metadata.SourceQuery.Method,
-			Query:                &i.Item.Metadata.SourceQuery.Query,
-		})
-
+		ck := CacheKeyFromQuery(i.Item.Metadata.SourceQuery, i.Item.Metadata.SourceName)
+		items, err := cache.Search(ck)
 		if err != nil {
 			t.Error(err)
 		}
@@ -266,7 +257,8 @@ func TestStartPurge(t *testing.T) {
 	}
 
 	for _, i := range cachedItems {
-		cache.StoreItem(i.Item, time.Until(i.Expiry))
+		ck := CacheKeyFromQuery(i.Item.Metadata.SourceQuery, i.Item.Metadata.SourceName)
+		cache.StoreItem(i.Item, time.Until(i.Expiry), ck)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -283,7 +275,10 @@ func TestStartPurge(t *testing.T) {
 
 	// At this point everything should be been cleaned, and the purger should be
 	// sleeping forever
-	items, err := cache.Search(ToCacheQuery(cachedItems[1].Item))
+	items, err := cache.Search(CacheKeyFromQuery(
+		cachedItems[1].Item.Metadata.SourceQuery,
+		cachedItems[1].Item.Metadata.SourceName,
+	))
 
 	if !errors.Is(err, ErrCacheNotFound) {
 		t.Errorf("unexpected error: %v", err)
@@ -300,13 +295,17 @@ func TestStartPurge(t *testing.T) {
 
 	// Adding a new item should kick off the purging again
 	for _, i := range cachedItems {
-		cache.StoreItem(i.Item, 100*time.Millisecond)
+		ck := CacheKeyFromQuery(i.Item.Metadata.SourceQuery, i.Item.Metadata.SourceName)
+		cache.StoreItem(i.Item, 100*time.Millisecond, ck)
 	}
 
 	time.Sleep(200 * time.Millisecond)
 
 	// It should be empty again
-	items, err = cache.Search(ToCacheQuery(cachedItems[1].Item))
+	items, err = cache.Search(CacheKeyFromQuery(
+		cachedItems[1].Item.Metadata.SourceQuery,
+		cachedItems[1].Item.Metadata.SourceName,
+	))
 
 	if !errors.Is(err, ErrCacheNotFound) {
 		t.Errorf("unexpected error: %v", err)
@@ -327,7 +326,8 @@ func TestStopPurge(t *testing.T) {
 
 	// Insert an item
 	item := GenerateRandomItem()
-	cache.StoreItem(item, time.Millisecond)
+	ck := CacheKeyFromQuery(item.Metadata.SourceQuery, item.Metadata.SourceName)
+	cache.StoreItem(item, time.Millisecond, ck)
 	sst := SST{
 		SourceName: item.Metadata.SourceName,
 		Scope:      item.Scope,
@@ -336,7 +336,7 @@ func TestStopPurge(t *testing.T) {
 
 	// Make sure it's not purged
 	time.Sleep(100 * time.Millisecond)
-	items, err := cache.Search(CacheQuery{
+	items, err := cache.Search(CacheKey{
 		SST: sst,
 	})
 
@@ -354,7 +354,8 @@ func TestDelete(t *testing.T) {
 
 	// Insert an item
 	item := GenerateRandomItem()
-	cache.StoreItem(item, time.Millisecond)
+	ck := CacheKeyFromQuery(item.Metadata.SourceQuery, item.Metadata.SourceName)
+	cache.StoreItem(item, time.Millisecond, ck)
 	sst := SST{
 		SourceName: item.Metadata.SourceName,
 		Scope:      item.Scope,
@@ -362,7 +363,7 @@ func TestDelete(t *testing.T) {
 	}
 
 	// It should be there
-	items, err := cache.Search(CacheQuery{
+	items, err := cache.Search(CacheKey{
 		SST: sst,
 	})
 
@@ -375,12 +376,12 @@ func TestDelete(t *testing.T) {
 	}
 
 	// Delete it
-	cache.Delete(CacheQuery{
+	cache.Delete(CacheKey{
 		SST: sst,
 	})
 
 	// It should be gone
-	items, err = cache.Search(CacheQuery{
+	items, err = cache.Search(CacheKey{
 		SST: sst,
 	})
 
@@ -414,13 +415,14 @@ func TestConcurrent(t *testing.T) {
 			defer wg.Done()
 			// Store the item
 			item := GenerateRandomItem()
-			cache.StoreItem(item, 100*time.Millisecond)
+			ck := CacheKeyFromQuery(item.Metadata.SourceQuery, item.Metadata.SourceName)
+			cache.StoreItem(item, 100*time.Millisecond, ck)
 
 			wg.Add(1)
 			// Create a goroutine to also delete in parallel
 			go func() {
 				defer wg.Done()
-				cache.Delete(ToCacheQuery(item))
+				cache.Delete(ck)
 			}()
 		}()
 	}
@@ -432,13 +434,12 @@ func TestPointers(t *testing.T) {
 	cache := NewCache()
 
 	item := GenerateRandomItem()
-
-	cache.StoreItem(item, time.Minute)
-	cq := ToCacheQuery(item)
+	ck := CacheKeyFromQuery(item.Metadata.SourceQuery, item.Metadata.SourceName)
+	cache.StoreItem(item, time.Minute, ck)
 
 	item.Type = "bad"
 
-	items, err := cache.Search(cq)
+	items, err := cache.Search(ck)
 
 	if err != nil {
 		t.Error(err)
@@ -460,7 +461,8 @@ func TestCacheClear(t *testing.T) {
 
 	// Populate the cache
 	item := GenerateRandomItem()
-	cache.StoreItem(item, 500*time.Millisecond)
+	ck := CacheKeyFromQuery(item.Metadata.SourceQuery, item.Metadata.SourceName)
+	cache.StoreItem(item, 500*time.Millisecond, ck)
 
 	// Start purging just to make sure it doesn't break
 	ctx, cancel := context.WithCancel(context.Background())
@@ -468,7 +470,7 @@ func TestCacheClear(t *testing.T) {
 	cache.StartPurger(ctx)
 
 	// Make sure the cache is populated
-	_, err := cache.Search(ToCacheQuery(item))
+	_, err := cache.Search(ck)
 
 	if err != nil {
 		t.Error(err)
@@ -478,15 +480,15 @@ func TestCacheClear(t *testing.T) {
 	cache.Clear()
 
 	// Make sure the cache is empty
-	_, err = cache.Search(ToCacheQuery(item))
+	_, err = cache.Search(ck)
 
 	if err == nil {
 		t.Error("expected error, cache not cleared")
 	}
 
 	// Make sure we can populate it again
-	cache.StoreItem(item, 500*time.Millisecond)
-	_, err = cache.Search(ToCacheQuery(item))
+	cache.StoreItem(item, 500*time.Millisecond, ck)
+	_, err = cache.Search(ck)
 
 	if err != nil {
 		t.Error(err)
@@ -494,7 +496,7 @@ func TestCacheClear(t *testing.T) {
 }
 
 func TestToIndexValues(t *testing.T) {
-	cq := CacheQuery{
+	ck := CacheKey{
 		SST: SST{
 			SourceName: "foo",
 			Scope:      "foo",
@@ -503,16 +505,16 @@ func TestToIndexValues(t *testing.T) {
 	}
 
 	t.Run("with just SST", func(t *testing.T) {
-		iv := cq.ToIndexValues()
+		iv := ck.ToIndexValues()
 
-		if iv.SSTHash != cq.SST.Hash() {
+		if iv.SSTHash != ck.SST.Hash() {
 			t.Error("hash mismatch")
 		}
 	})
 
 	t.Run("with SST & Method", func(t *testing.T) {
-		cq.Method = sdp.QueryMethod_GET.Enum()
-		iv := cq.ToIndexValues()
+		ck.Method = sdp.QueryMethod_GET.Enum()
+		iv := ck.ToIndexValues()
 
 		if iv.Method != sdp.QueryMethod_GET {
 			t.Errorf("expected %v, got %v", sdp.QueryMethod_GET, iv.Method)
@@ -521,8 +523,8 @@ func TestToIndexValues(t *testing.T) {
 
 	t.Run("with SST & Query", func(t *testing.T) {
 		q := "query"
-		cq.Query = &q
-		iv := cq.ToIndexValues()
+		ck.Query = &q
+		iv := ck.ToIndexValues()
 
 		if iv.Query != "query" {
 			t.Errorf("expected %v, got %v", "query", iv.Query)
@@ -531,11 +533,95 @@ func TestToIndexValues(t *testing.T) {
 
 	t.Run("with SST & UniqueAttributeValue", func(t *testing.T) {
 		q := "foo"
-		cq.UniqueAttributeValue = &q
-		iv := cq.ToIndexValues()
+		ck.UniqueAttributeValue = &q
+		iv := ck.ToIndexValues()
 
 		if iv.UniqueAttributeValue != "foo" {
 			t.Errorf("expected %v, got %v", "foo", iv.UniqueAttributeValue)
 		}
 	})
+}
+
+func TestLookup(t *testing.T) {
+	ctx := context.Background()
+	cache := NewCache()
+
+	item := GenerateRandomItem()
+	ck := CacheKeyFromQuery(item.Metadata.SourceQuery, item.Metadata.SourceName)
+	cache.StoreItem(item, 10*time.Second, ck)
+
+	// ignore the cache
+	cacheHit, _, cachedItems, err := cache.Lookup(ctx, item.Metadata.SourceName, sdp.QueryMethod_GET, item.Scope, item.Type, item.UniqueAttributeValue(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cacheHit {
+		t.Error("expected cache miss, got hit")
+	}
+	if cachedItems != nil {
+		t.Errorf("expected nil items, got %v", cachedItems)
+	}
+
+	// Lookup the item
+	cacheHit, _, cachedItems, err = cache.Lookup(ctx, item.Metadata.SourceName, sdp.QueryMethod_GET, item.Scope, item.Type, item.UniqueAttributeValue(), false)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cacheHit {
+		t.Fatal("expected cache hit, got miss")
+	}
+	if len(cachedItems) != 1 {
+		t.Fatalf("expected 1 item, got %v", len(cachedItems))
+	}
+
+	if cachedItems[0].Type != item.Type {
+		t.Errorf("expected type %v, got %v", item.Type, cachedItems[0].Type)
+	}
+
+	stats := cache.Purge(time.Now().Add(1 * time.Hour))
+	if stats.NumPurged != 1 {
+		t.Errorf("expected 1 item purged, got %v", stats.NumPurged)
+	}
+
+	// Lookup the item
+	cacheHit, _, cachedItems, err = cache.Lookup(ctx, item.Metadata.SourceName, sdp.QueryMethod_GET, item.Scope, item.Type, item.UniqueAttributeValue(), false)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cacheHit {
+		t.Fatal("expected cache miss, got hit")
+	}
+	if len(cachedItems) != 0 {
+		t.Fatalf("expected 0 item, got %v", len(cachedItems))
+	}
+}
+
+func TestStoreSearch(t *testing.T) {
+	ctx := context.Background()
+	cache := NewCache()
+
+	item := GenerateRandomItem()
+	item.Metadata.SourceQuery.Method = sdp.QueryMethod_SEARCH
+	ck := CacheKeyFromQuery(item.Metadata.SourceQuery, item.Metadata.SourceName)
+	cache.StoreItem(item, 10*time.Second, ck)
+
+	// Lookup the item as GET request
+	cacheHit, _, cachedItems, err := cache.Lookup(ctx, item.Metadata.SourceName, sdp.QueryMethod_GET, item.Scope, item.Type, item.UniqueAttributeValue(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !cacheHit {
+		t.Fatal("expected cache hit, got miss")
+	}
+
+	if len(cachedItems) != 1 {
+		t.Fatalf("expected 1 item, got %v", len(cachedItems))
+	}
+
+	if cachedItems[0].Type != item.Type {
+		t.Errorf("expected type %v, got %v", item.Type, cachedItems[0].Type)
+	}
 }

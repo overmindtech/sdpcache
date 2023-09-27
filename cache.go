@@ -11,6 +11,8 @@ import (
 
 	"github.com/google/btree"
 	"github.com/overmindtech/sdp-go"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type IndexValues struct {
@@ -20,51 +22,83 @@ type IndexValues struct {
 	Query                string
 }
 
-type CacheQuery struct {
+type CacheKey struct {
 	SST                  SST // *required
 	UniqueAttributeValue *string
 	Method               *sdp.QueryMethod
 	Query                *string
 }
 
-func (cq CacheQuery) String() string {
+func CacheKeyFromParts(srcName string, method sdp.QueryMethod, scope string, typ string, query string) CacheKey {
+	ck := CacheKey{
+		SST: SST{
+			SourceName: srcName,
+			Scope:      scope,
+			Type:       typ,
+		},
+	}
+
+	switch method {
+	case sdp.QueryMethod_GET:
+		// With a Get query we need just the one specific item, so also
+		// filter on uniqueAttributeValue
+		ck.UniqueAttributeValue = &query
+	case sdp.QueryMethod_LIST:
+		// In the case of a find, we just want everything that was found in
+		// the last find, so we only care about the method
+		ck.Method = &method
+	case sdp.QueryMethod_SEARCH:
+		// For a search, we only want to get from the cache items that were
+		// found using search, and with the exact same query
+		ck.Method = &method
+		ck.Query = &query
+	}
+
+	return ck
+}
+
+func CacheKeyFromQuery(q *sdp.Query, srcName string) CacheKey {
+	return CacheKeyFromParts(srcName, q.Method, q.Scope, q.Type, q.Query)
+}
+
+func (ck CacheKey) String() string {
 	fields := []string{
-		("SourceName=" + cq.SST.SourceName),
-		("Scope=" + cq.SST.Scope),
-		("Type=" + cq.SST.Type),
+		("SourceName=" + ck.SST.SourceName),
+		("Scope=" + ck.SST.Scope),
+		("Type=" + ck.SST.Type),
 	}
 
-	if cq.UniqueAttributeValue != nil {
-		fields = append(fields, ("UniqueAttributeValue=" + *cq.UniqueAttributeValue))
+	if ck.UniqueAttributeValue != nil {
+		fields = append(fields, ("UniqueAttributeValue=" + *ck.UniqueAttributeValue))
 	}
 
-	if cq.Method != nil {
-		fields = append(fields, ("Method=" + cq.Method.String()))
+	if ck.Method != nil {
+		fields = append(fields, ("Method=" + ck.Method.String()))
 	}
 
-	if cq.Query != nil {
-		fields = append(fields, ("Query=" + *cq.Query))
+	if ck.Query != nil {
+		fields = append(fields, ("Query=" + *ck.Query))
 	}
 
 	return strings.Join(fields, ", ")
 }
 
 // ToIndexValues Converts a cache query to a set of index values
-func (cq CacheQuery) ToIndexValues() IndexValues {
+func (ck CacheKey) ToIndexValues() IndexValues {
 	iv := IndexValues{
-		SSTHash: cq.SST.Hash(),
+		SSTHash: ck.SST.Hash(),
 	}
 
-	if cq.Method != nil {
-		iv.Method = *cq.Method
+	if ck.Method != nil {
+		iv.Method = *ck.Method
 	}
 
-	if cq.Query != nil {
-		iv.Query = *cq.Query
+	if ck.Query != nil {
+		iv.Query = *ck.Query
 	}
 
-	if cq.UniqueAttributeValue != nil {
-		iv.UniqueAttributeValue = *cq.UniqueAttributeValue
+	if ck.UniqueAttributeValue != nil {
+		iv.UniqueAttributeValue = *ck.UniqueAttributeValue
 	}
 
 	return iv
@@ -74,22 +108,22 @@ func (cq CacheQuery) ToIndexValues() IndexValues {
 // CacheQuery, excluding the SST since this will have already been validated.
 // Note that this only checks values that ave actually been set in the
 // CacheQuery
-func (cq CacheQuery) Matches(i IndexValues) bool {
+func (ck CacheKey) Matches(i IndexValues) bool {
 	// Check for any mismatches on the values that are set
-	if cq.Method != nil {
-		if *cq.Method != i.Method {
+	if ck.Method != nil {
+		if *ck.Method != i.Method {
 			return false
 		}
 	}
 
-	if cq.Query != nil {
-		if *cq.Query != i.Query {
+	if ck.Query != nil {
+		if *ck.Query != i.Query {
 			return false
 		}
 	}
 
-	if cq.UniqueAttributeValue != nil {
-		if *cq.UniqueAttributeValue != i.UniqueAttributeValue {
+	if ck.UniqueAttributeValue != nil {
+		if *ck.UniqueAttributeValue != i.UniqueAttributeValue {
 			return false
 		}
 	}
@@ -197,18 +231,122 @@ func newIndexSet() *indexSet {
 	}
 }
 
+// Lookup returns true/false whether or not the cache has a result for the given
+// query. If there are results, they will be returned as slice of `sdp.Item`s or
+// an `*sdp.QueryError`.
+// The CacheKey is always returned, even if the lookup otherwise fails or errors
+func (c *Cache) Lookup(ctx context.Context, srcName string, method sdp.QueryMethod, scope string, typ string, query string, ignoreCache bool) (bool, CacheKey, []*sdp.Item, *sdp.QueryError) {
+	span := trace.SpanFromContext(ctx)
+	ck := CacheKeyFromParts(srcName, method, scope, typ, query)
+
+	if c == nil {
+		span.SetAttributes(
+			attribute.String("om.cache.result", "cache not initialised"),
+			attribute.Bool("om.cache.hit", false),
+		)
+		return false, ck, nil, &sdp.QueryError{
+			ErrorType:   sdp.QueryError_OTHER,
+			ErrorString: "cache has not been initialised",
+			Scope:       scope,
+			SourceName:  srcName,
+			ItemType:    typ,
+		}
+	}
+
+	if ignoreCache {
+		span.SetAttributes(
+			attribute.String("om.cache.result", "ignore cache"),
+			attribute.Bool("om.cache.hit", false),
+		)
+		return false, ck, nil, nil
+	}
+
+	items, err := c.Search(ck)
+
+	if err != nil {
+		var qErr *sdp.QueryError
+		if errors.Is(err, ErrCacheNotFound) {
+			// If nothing was found then execute the search against the sources
+			span.SetAttributes(
+				attribute.String("om.cache.result", "cache miss"),
+				attribute.Bool("om.cache.hit", false),
+			)
+			return false, ck, nil, nil
+		} else if errors.As(err, &qErr) {
+			if qErr.ErrorType == sdp.QueryError_NOTFOUND {
+				span.SetAttributes(attribute.String("om.cache.result", "cache hit: item not found"))
+			} else {
+				span.SetAttributes(
+					attribute.String("om.cache.result", "cache hit: QueryError"),
+					attribute.String("om.cache.error", err.Error()),
+				)
+			}
+
+			span.SetAttributes(attribute.Bool("om.cache.hit", true))
+			return true, ck, nil, qErr
+		} else {
+			// If it's an unknown error, convert it to SDP and skip this source
+			qErr = &sdp.QueryError{
+				ErrorType:   sdp.QueryError_OTHER,
+				ErrorString: err.Error(),
+				Scope:       scope,
+				SourceName:  srcName,
+				ItemType:    typ,
+			}
+
+			span.SetAttributes(
+				attribute.String("om.cache.error", err.Error()),
+				attribute.String("om.cache.result", "cache hit: unknown QueryError"),
+				attribute.Bool("om.cache.hit", true),
+			)
+
+			return true, ck, nil, qErr
+		}
+	}
+
+	if method == sdp.QueryMethod_GET {
+		// If the method was Get we should validate that we have
+		// only pulled one thing from the cache
+
+		if len(items) < 2 {
+			span.SetAttributes(
+				attribute.String("om.cache.result", "cache hit: 1 item"),
+				attribute.Int("om.cache.numItems", len(items)),
+				attribute.Bool("om.cache.hit", true),
+			)
+			return true, ck, items, nil
+		} else {
+			span.SetAttributes(
+				attribute.String("om.cache.result", "cache returned >1 value, purging and continuing"),
+				attribute.Int("om.cache.numItems", len(items)),
+				attribute.Bool("om.cache.hit", false),
+			)
+			c.Delete(ck)
+			return false, ck, nil, nil
+		}
+	}
+
+	span.SetAttributes(
+		attribute.String("om.cache.result", "cache hit: multiple items"),
+		attribute.Int("om.cache.numItems", len(items)),
+		attribute.Bool("om.cache.hit", true),
+	)
+
+	return true, ck, items, nil
+}
+
 // Search Runs a given query against the cache. If a cached error is found it
 // will be returned immediately, if nothing is found a ErrCacheNotFound will
 // be returned. Otherwise this will return items that match ALL of the given
 // query parameters
-func (c *Cache) Search(cq CacheQuery) ([]*sdp.Item, error) {
+func (c *Cache) Search(ck CacheKey) ([]*sdp.Item, error) {
 	if c == nil {
 		return nil, nil
 	}
 
 	items := make([]*sdp.Item, 0)
 
-	results := c.getResults(cq)
+	results := c.getResults(ck)
 
 	if len(results) == 0 {
 		return nil, ErrCacheNotFound
@@ -236,24 +374,24 @@ func (c *Cache) Search(cq CacheQuery) ([]*sdp.Item, error) {
 }
 
 // Delete Deletes anything that matches the given cache query
-func (c *Cache) Delete(cq CacheQuery) {
+func (c *Cache) Delete(ck CacheKey) {
 	if c == nil {
 		return
 	}
 
-	c.deleteResults(c.getResults(cq))
+	c.deleteResults(c.getResults(ck))
 }
 
 // getResults Searches indexes for cached results, doing no other logic. If
 // nothing is found an empty slice will be returned.
-func (c *Cache) getResults(cq CacheQuery) []*CachedResult {
+func (c *Cache) getResults(ck CacheKey) []*CachedResult {
 	c.indexMutex.RLock()
 	defer c.indexMutex.RUnlock()
 
 	results := make([]*CachedResult, 0)
 
 	// Get the relevant set of indexes based on the SST Hash
-	sstHash := cq.SST.Hash()
+	sstHash := ck.SST.Hash()
 	indexes, exists := c.indexes[sstHash]
 	pivot := CachedResult{
 		IndexValues: IndexValues{
@@ -269,12 +407,12 @@ func (c *Cache) getResults(cq CacheQuery) []*CachedResult {
 	// Start with the most specific index and fall back to the least specific.
 	// Checking all matching items and returning. These is no need to check all
 	// indexes since they all have the same content
-	if cq.UniqueAttributeValue != nil {
-		pivot.IndexValues.UniqueAttributeValue = *cq.UniqueAttributeValue
+	if ck.UniqueAttributeValue != nil {
+		pivot.IndexValues.UniqueAttributeValue = *ck.UniqueAttributeValue
 
 		indexes.uniqueAttributeValueIndex.AscendGreaterOrEqual(&pivot, func(result *CachedResult) bool {
-			if *cq.UniqueAttributeValue == result.IndexValues.UniqueAttributeValue {
-				if cq.Matches(result.IndexValues) {
+			if *ck.UniqueAttributeValue == result.IndexValues.UniqueAttributeValue {
+				if ck.Matches(result.IndexValues) {
 					results = append(results, result)
 				}
 
@@ -288,12 +426,12 @@ func (c *Cache) getResults(cq CacheQuery) []*CachedResult {
 		return results
 	}
 
-	if cq.Query != nil {
-		pivot.IndexValues.Query = *cq.Query
+	if ck.Query != nil {
+		pivot.IndexValues.Query = *ck.Query
 
 		indexes.queryIndex.AscendGreaterOrEqual(&pivot, func(result *CachedResult) bool {
-			if *cq.Query == result.IndexValues.Query {
-				if cq.Matches(result.IndexValues) {
+			if *ck.Query == result.IndexValues.Query {
+				if ck.Matches(result.IndexValues) {
 					results = append(results, result)
 				}
 
@@ -307,13 +445,13 @@ func (c *Cache) getResults(cq CacheQuery) []*CachedResult {
 		return results
 	}
 
-	if cq.Method != nil {
-		pivot.IndexValues.Method = *cq.Method
+	if ck.Method != nil {
+		pivot.IndexValues.Method = *ck.Method
 
 		indexes.methodIndex.AscendGreaterOrEqual(&pivot, func(result *CachedResult) bool {
-			if *cq.Method == result.IndexValues.Method {
+			if *ck.Method == result.IndexValues.Method {
 				// If the methods match, check the rest
-				if cq.Matches(result.IndexValues) {
+				if ck.Matches(result.IndexValues) {
 					results = append(results, result)
 				}
 
@@ -339,7 +477,7 @@ func (c *Cache) getResults(cq CacheQuery) []*CachedResult {
 
 // StoreItem Stores an item in the cache. Note that this item must be fully
 // populated (including metadata) for indexing to work correctly
-func (c *Cache) StoreItem(item *sdp.Item, duration time.Duration) {
+func (c *Cache) StoreItem(item *sdp.Item, duration time.Duration, ck CacheKey) {
 	if item == nil || c == nil {
 		return
 	}
@@ -356,26 +494,20 @@ func (c *Cache) StoreItem(item *sdp.Item, duration time.Duration) {
 		},
 	}
 
-	if itemCopy.Metadata != nil {
-		if itemCopy.Metadata.SourceQuery != nil {
-			res.IndexValues.Method = item.Metadata.SourceQuery.Method
-			res.IndexValues.Query = item.Metadata.SourceQuery.Query
-		}
-
-		res.IndexValues.SSTHash = SST{
-			SourceName: itemCopy.Metadata.SourceName,
-			Scope:      itemCopy.Scope,
-			Type:       itemCopy.Type,
-		}.Hash()
+	if ck.Method != nil {
+		res.IndexValues.Method = *ck.Method
 	}
+	if ck.Query != nil {
+		res.IndexValues.Query = *ck.Query
+	}
+
+	res.IndexValues.SSTHash = ck.SST.Hash()
 
 	c.storeResult(res)
 }
 
-// StoreError Stores an error for the given duration. Since we can't determine
-// the index values from the error itself, the user also needs to pass in the
-// cache query that this error should respond to
-func (c *Cache) StoreError(err error, duration time.Duration, cacheQuery CacheQuery) {
+// StoreError Stores an error for the given duration.
+func (c *Cache) StoreError(err error, duration time.Duration, cacheQuery CacheKey) {
 	if c == nil || err == nil {
 		return
 	}
