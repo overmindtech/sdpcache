@@ -559,3 +559,31 @@ func TestLookup(t *testing.T) {
 		t.Errorf("expected type %v, got %v", item.Type, cachedItems[0].Type)
 	}
 }
+
+func TestStoreSearch(t *testing.T) {
+	ctx := context.Background()
+	cache := NewCache()
+
+	item := GenerateRandomItem()
+	item.Metadata.SourceQuery.Method = sdp.QueryMethod_SEARCH
+	ck := CacheKeyFromQuery(item.Metadata.SourceQuery, item.Metadata.SourceName)
+	cache.StoreItem(item, 10*time.Second, ck)
+
+	// Lookup the item as GET request
+	cacheHit, _, cachedItems, err := cache.Lookup(ctx, item.Metadata.SourceName, sdp.QueryMethod_GET, item.Scope, item.Type, item.UniqueAttributeValue(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !cacheHit {
+		t.Fatal("expected cache hit, got miss")
+	}
+
+	if len(cachedItems) != 1 {
+		t.Fatalf("expected 1 item, got %v", len(cachedItems))
+	}
+
+	if cachedItems[0].Type != item.Type {
+		t.Errorf("expected type %v, got %v", item.Type, cachedItems[0].Type)
+	}
+}
