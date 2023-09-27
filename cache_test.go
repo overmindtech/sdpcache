@@ -558,6 +558,24 @@ func TestLookup(t *testing.T) {
 	if cachedItems[0].Type != item.Type {
 		t.Errorf("expected type %v, got %v", item.Type, cachedItems[0].Type)
 	}
+
+	stats := cache.Purge(time.Now().Add(1 * time.Hour))
+	if stats.NumPurged != 1 {
+		t.Errorf("expected 1 item purged, got %v", stats.NumPurged)
+	}
+
+	// Lookup the item
+	cacheHit, _, cachedItems, err = cache.Lookup(ctx, item.Metadata.SourceName, sdp.QueryMethod_GET, item.Scope, item.Type, item.UniqueAttributeValue(), false)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cacheHit {
+		t.Fatal("expected cache miss, got hit")
+	}
+	if len(cachedItems) != 0 {
+		t.Fatalf("expected 0 item, got %v", len(cachedItems))
+	}
 }
 
 func TestStoreSearch(t *testing.T) {
