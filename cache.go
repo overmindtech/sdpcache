@@ -273,11 +273,6 @@ func (c *Cache) Lookup(ctx context.Context, srcName string, method sdp.QueryMeth
 			)
 			return false, ck, nil, nil
 		} else if errors.As(err, &qErr) {
-			// Add relevant info
-			qErr.Scope = scope
-			qErr.SourceName = srcName
-			qErr.ItemType = typ
-
 			if qErr.ErrorType == sdp.QueryError_NOTFOUND {
 				span.SetAttributes(attribute.String("om.cache.result", "cache hit: item not found"))
 			} else {
