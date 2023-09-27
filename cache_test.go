@@ -88,15 +88,8 @@ func TestStoreError(t *testing.T) {
 		item.Scope = "foo"
 		item.Type = "foo"
 
-		items, err := cache.Search(CacheKey{
-			SST: SST{
-				SourceName: item.Metadata.SourceName,
-				Scope:      item.Scope,
-				Type:       item.Type,
-			},
-			Method: &item.Metadata.SourceQuery.Method,
-			Query:  &item.Metadata.SourceQuery.Query,
-		})
+		ck := CacheKeyFromQuery(item.Metadata.SourceQuery, item.Metadata.SourceName)
+		items, err := cache.Search(ck)
 
 		if len(items) > 0 {
 			t.Errorf("expected 0 items, got %v", len(items))
@@ -178,18 +171,8 @@ func TestPurge(t *testing.T) {
 
 	// Make sure all the items are in the cache
 	for _, i := range cachedItems {
-		uav := i.Item.UniqueAttributeValue()
-		items, err := cache.Search(CacheKey{
-			SST: SST{
-				SourceName: i.Item.Metadata.SourceName,
-				Scope:      i.Item.Scope,
-				Type:       i.Item.Type,
-			},
-			UniqueAttributeValue: &uav,
-			Method:               &i.Item.Metadata.SourceQuery.Method,
-			Query:                &i.Item.Metadata.SourceQuery.Query,
-		})
-
+		ck := CacheKeyFromQuery(i.Item.Metadata.SourceQuery, i.Item.Metadata.SourceName)
+		items, err := cache.Search(ck)
 		if err != nil {
 			t.Error(err)
 		}
