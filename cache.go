@@ -511,9 +511,7 @@ func (c *Cache) StoreItem(item *sdp.Item, duration time.Duration, ck CacheKey) {
 	c.storeResult(res)
 }
 
-// StoreError Stores an error for the given duration. Since we can't determine
-// the index values from the error itself, the user also needs to pass in the
-// cache query that this error should respond to
+// StoreError Stores an error for the given duration.
 func (c *Cache) StoreError(err error, duration time.Duration, cacheQuery CacheKey) {
 	if c == nil || err == nil {
 		return

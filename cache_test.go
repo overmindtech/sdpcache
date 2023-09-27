@@ -3,6 +3,7 @@ package sdpcache
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -19,7 +20,6 @@ func TestStoreItem(t *testing.T) {
 		cache.StoreItem(item, 10*time.Second, ck)
 
 		results, err := cache.Search(ck)
-
 		if err != nil {
 			t.Error(err)
 		}
@@ -35,13 +35,33 @@ func TestStoreItem(t *testing.T) {
 		cache.StoreItem(item, 10*time.Second, ck)
 
 		results, err := cache.Search(ck)
-
 		if err != nil {
 			t.Error(err)
 		}
 
 		if len(results) != 1 {
 			t.Errorf("expected 1 result, got %v", len(results))
+		}
+	})
+
+	t.Run("different scope", func(t *testing.T) {
+		item := GenerateRandomItem()
+		ck := CacheKeyFromQuery(item.Metadata.SourceQuery, item.Metadata.SourceName)
+		cache.StoreItem(item, 10*time.Second, ck)
+
+		ck.SST.Scope = fmt.Sprintf("new scope %v", ck.SST.Scope)
+
+		results, err := cache.Search(ck)
+		if err != nil {
+			if !errors.Is(err, ErrCacheNotFound) {
+				t.Error(err)
+			} else {
+				t.Log("expected cache miss")
+			}
+		}
+
+		if len(results) != 0 {
+			t.Errorf("expected 0 result, got %v", results)
 		}
 	})
 }
