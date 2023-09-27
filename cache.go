@@ -238,6 +238,21 @@ func newIndexSet() *indexSet {
 func (c *Cache) Lookup(ctx context.Context, srcName string, method sdp.QueryMethod, scope string, typ string, query string, ignoreCache bool) (bool, CacheKey, []*sdp.Item, *sdp.QueryError) {
 	span := trace.SpanFromContext(ctx)
 	ck := CacheKeyFromParts(srcName, method, scope, typ, query)
+
+	if c == nil {
+		span.SetAttributes(
+			attribute.String("om.cache.result", "cache not initialised"),
+			attribute.Bool("om.cache.hit", false),
+		)
+		return false, ck, nil, &sdp.QueryError{
+			ErrorType:   sdp.QueryError_OTHER,
+			ErrorString: "cache has not been initialised",
+			Scope:       scope,
+			SourceName:  srcName,
+			ItemType:    typ,
+		}
+	}
+
 	if ignoreCache {
 		span.SetAttributes(
 			attribute.String("om.cache.result", "ignore cache"),
