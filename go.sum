@@ -7,6 +7,8 @@ github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/getsentry/sentry-go v0.24.1 h1:W6/0GyTy8J6ge6lVCc94WB6Gx2ZuLrgopnn9w8Hiwuk=
 github.com/getsentry/sentry-go v0.24.1/go.mod h1:lc76E2QywIyW8WuBnwl8Lc4bkmQH4+w1gwTf25trprY=
+github.com/getsentry/sentry-go v0.25.0 h1:q6Eo+hS+yoJlTO3uu/azhQadsD8V+jQn2D8VvX1eOyI=
+github.com/getsentry/sentry-go v0.25.0/go.mod h1:lc76E2QywIyW8WuBnwl8Lc4bkmQH4+w1gwTf25trprY=
 github.com/go-errors/errors v1.4.2 h1:J6MZopCL4uSllY1OfXM374weqZFFItUbrImctkmUxIA=
 github.com/go-errors/errors v1.4.2/go.mod h1:sIVyrIiJhuEF+Pj9Ebtd6P/rEYROXFi3BopGUQ5a5Og=
 github.com/go-logr/logr v1.2.2/go.mod h1:jdQByPbusPIv2/zmleS9BjJVeZ6kBagPoEUsqbVz/1A=
@@ -42,6 +44,8 @@ github.com/overmindtech/sdp-go v0.49.6 h1:Zpt9t46NElxnttqfMG4gBQoXFMWT7Cuaz2BDd4
 github.com/overmindtech/sdp-go v0.49.6/go.mod h1:7pJC3L1Ik6rswjF5u9RHw/rDPvsqOMgdxk3oMukJlWE=
 github.com/overmindtech/sdp-go v0.50.0 h1:hHLMBlBoaE4XyI7cH3M75Jd85FnU/O4d1KvHOXmze0o=
 github.com/overmindtech/sdp-go v0.50.0/go.mod h1:7pJC3L1Ik6rswjF5u9RHw/rDPvsqOMgdxk3oMukJlWE=
+github.com/overmindtech/sdp-go v0.51.0 h1:8Mrf255YcfJfEpZhPEc5PJoIdE+W7mpiF0FDQ5uUS4Y=
+github.com/overmindtech/sdp-go v0.51.0/go.mod h1:w0BX6qD9SU96AraCV8sIePacoceMeekXZPsNswUmbAs=
 github.com/pingcap/errors v0.11.4 h1:lFuQV/oaUMGcD2tqt+01ROSmJs75VG1ToEOkZIZ4nE4=
 github.com/pingcap/errors v0.11.4/go.mod h1:Oi8TUi2kEtXXLMJk9l1cGmz20kV3TaQ0usTwv5KuLY8=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
