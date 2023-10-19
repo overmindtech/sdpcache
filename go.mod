@@ -18,7 +18,7 @@ require (
 	github.com/go-logr/logr v1.2.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/klauspost/compress v1.17.0 // indirect
-	github.com/nats-io/nats-server/v2 v2.10.1 // indirect
+	github.com/nats-io/nats-server/v2 v2.10.2 // indirect
 	github.com/nats-io/nats.go v1.30.2 // indirect
 	github.com/nats-io/nkeys v0.4.5 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
