@@ -579,6 +579,14 @@ func TestLookup(t *testing.T) {
 		t.Errorf("expected type %v, got %v", item.Type, cachedItems[0].Type)
 	}
 
+	if cachedItems[0].Health == nil {
+		t.Error("expected health to be set")
+	}
+
+	if len(cachedItems[0].Tags) == 0 {
+		t.Error("expected tags to be set")
+	}
+
 	stats := cache.Purge(time.Now().Add(1 * time.Hour))
 	if stats.NumPurged != 1 {
 		t.Errorf("expected 1 item purged, got %v", stats.NumPurged)

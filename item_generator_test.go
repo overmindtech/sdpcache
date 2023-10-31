@@ -29,6 +29,9 @@ var Types = []string{
 }
 
 const MaxAttributes = 30
+const MaxTags = 10
+const MaxTagKeyLength = 10
+const MaxTagValueLength = 10
 const MaxAttributeKeyLength = 20
 const MaxAttributeValueLength = 50
 const MaxLinkedItems = 10
@@ -49,6 +52,12 @@ func GenerateRandomItem() *sdp.Item {
 	}
 
 	attributes, _ := sdp.ToAttributes(attrs)
+
+	tags := make(map[string]string)
+
+	for i := 0; i < rand.Intn(MaxTags); i++ {
+		tags[randSeq(rand.Intn(MaxTagKeyLength))] = randSeq(rand.Intn(MaxTagValueLength))
+	}
 
 	linkedItems := make([]*sdp.LinkedItem, rand.Intn(MaxLinkedItems))
 
@@ -75,6 +84,9 @@ func GenerateRandomItem() *sdp.Item {
 		}}
 	}
 
+	// Generate health (which is an int32 between 0 and 4)
+	health := sdp.Health(rand.Intn(int(sdp.Health_HEALTH_PENDING) + 1))
+
 	queryUuid := uuid.New()
 
 	item := sdp.Item{
@@ -100,6 +112,8 @@ func GenerateRandomItem() *sdp.Item {
 			SourceDuration:        durationpb.New(time.Millisecond * time.Duration(rand.Int63())),
 			SourceDurationPerItem: durationpb.New(time.Millisecond * time.Duration(rand.Int63())),
 		},
+		Tags:   tags,
+		Health: &health,
 	}
 
 	return &item
