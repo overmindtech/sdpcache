@@ -241,8 +241,8 @@ func (c *Cache) Lookup(ctx context.Context, srcName string, method sdp.QueryMeth
 
 	if c == nil {
 		span.SetAttributes(
-			attribute.String("om.cache.result", "cache not initialised"),
-			attribute.Bool("om.cache.hit", false),
+			attribute.String("ovm.cache.result", "cache not initialised"),
+			attribute.Bool("ovm.cache.hit", false),
 		)
 		return false, ck, nil, &sdp.QueryError{
 			ErrorType:   sdp.QueryError_OTHER,
@@ -255,8 +255,8 @@ func (c *Cache) Lookup(ctx context.Context, srcName string, method sdp.QueryMeth
 
 	if ignoreCache {
 		span.SetAttributes(
-			attribute.String("om.cache.result", "ignore cache"),
-			attribute.Bool("om.cache.hit", false),
+			attribute.String("ovm.cache.result", "ignore cache"),
+			attribute.Bool("ovm.cache.hit", false),
 		)
 		return false, ck, nil, nil
 	}
@@ -268,21 +268,21 @@ func (c *Cache) Lookup(ctx context.Context, srcName string, method sdp.QueryMeth
 		if errors.Is(err, ErrCacheNotFound) {
 			// If nothing was found then execute the search against the sources
 			span.SetAttributes(
-				attribute.String("om.cache.result", "cache miss"),
-				attribute.Bool("om.cache.hit", false),
+				attribute.String("ovm.cache.result", "cache miss"),
+				attribute.Bool("ovm.cache.hit", false),
 			)
 			return false, ck, nil, nil
 		} else if errors.As(err, &qErr) {
 			if qErr.ErrorType == sdp.QueryError_NOTFOUND {
-				span.SetAttributes(attribute.String("om.cache.result", "cache hit: item not found"))
+				span.SetAttributes(attribute.String("ovm.cache.result", "cache hit: item not found"))
 			} else {
 				span.SetAttributes(
-					attribute.String("om.cache.result", "cache hit: QueryError"),
-					attribute.String("om.cache.error", err.Error()),
+					attribute.String("ovm.cache.result", "cache hit: QueryError"),
+					attribute.String("ovm.cache.error", err.Error()),
 				)
 			}
 
-			span.SetAttributes(attribute.Bool("om.cache.hit", true))
+			span.SetAttributes(attribute.Bool("ovm.cache.hit", true))
 			return true, ck, nil, qErr
 		} else {
 			// If it's an unknown error, convert it to SDP and skip this source
@@ -295,9 +295,9 @@ func (c *Cache) Lookup(ctx context.Context, srcName string, method sdp.QueryMeth
 			}
 
 			span.SetAttributes(
-				attribute.String("om.cache.error", err.Error()),
-				attribute.String("om.cache.result", "cache hit: unknown QueryError"),
-				attribute.Bool("om.cache.hit", true),
+				attribute.String("ovm.cache.error", err.Error()),
+				attribute.String("ovm.cache.result", "cache hit: unknown QueryError"),
+				attribute.Bool("ovm.cache.hit", true),
 			)
 
 			return true, ck, nil, qErr
@@ -310,16 +310,16 @@ func (c *Cache) Lookup(ctx context.Context, srcName string, method sdp.QueryMeth
 
 		if len(items) < 2 {
 			span.SetAttributes(
-				attribute.String("om.cache.result", "cache hit: 1 item"),
-				attribute.Int("om.cache.numItems", len(items)),
-				attribute.Bool("om.cache.hit", true),
+				attribute.String("ovm.cache.result", "cache hit: 1 item"),
+				attribute.Int("ovm.cache.numItems", len(items)),
+				attribute.Bool("ovm.cache.hit", true),
 			)
 			return true, ck, items, nil
 		} else {
 			span.SetAttributes(
-				attribute.String("om.cache.result", "cache returned >1 value, purging and continuing"),
-				attribute.Int("om.cache.numItems", len(items)),
-				attribute.Bool("om.cache.hit", false),
+				attribute.String("ovm.cache.result", "cache returned >1 value, purging and continuing"),
+				attribute.Int("ovm.cache.numItems", len(items)),
+				attribute.Bool("ovm.cache.hit", false),
 			)
 			c.Delete(ck)
 			return false, ck, nil, nil
@@ -327,9 +327,9 @@ func (c *Cache) Lookup(ctx context.Context, srcName string, method sdp.QueryMeth
 	}
 
 	span.SetAttributes(
-		attribute.String("om.cache.result", "cache hit: multiple items"),
-		attribute.Int("om.cache.numItems", len(items)),
-		attribute.Bool("om.cache.hit", true),
+		attribute.String("ovm.cache.result", "cache hit: multiple items"),
+		attribute.Int("ovm.cache.numItems", len(items)),
+		attribute.Bool("ovm.cache.hit", true),
 	)
 
 	return true, ck, items, nil
