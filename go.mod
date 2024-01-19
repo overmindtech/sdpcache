@@ -5,7 +5,7 @@ go 1.21.6
 require (
 	github.com/google/btree v1.1.2
 	github.com/google/uuid v1.5.0
-	github.com/overmindtech/sdp-go v0.61.7
+	github.com/overmindtech/sdp-go v0.61.8
 	go.opentelemetry.io/otel v1.22.0
 	go.opentelemetry.io/otel/trace v1.22.0
 	google.golang.org/protobuf v1.32.0
