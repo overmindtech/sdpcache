@@ -583,7 +583,7 @@ func TestLookup(t *testing.T) {
 		t.Error("expected health to be set")
 	}
 
-	if len(cachedItems[0].Tags) == 0 {
+	if len(cachedItems[0].Tags) != len(item.Tags) {
 		t.Error("expected tags to be set")
 	}
 
