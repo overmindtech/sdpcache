@@ -5,9 +5,6 @@ jobs:
     name: test
     runs-on: ubuntu-latest
 
-    env:
-      GOEXPERIMENT: loopvar
-
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -31,9 +28,6 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     needs:
       - test
-
-    env:
-      GOEXPERIMENT: loopvar
 
     steps:
       # Creates a release and attaches
