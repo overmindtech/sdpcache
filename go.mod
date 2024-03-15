@@ -1,6 +1,6 @@
 module github.com/overmindtech/sdpcache
 
-go 1.22.0
+go 1.22.1
 
 require (
 	github.com/google/btree v1.1.2
