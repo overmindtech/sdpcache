@@ -5,7 +5,7 @@ go 1.22.5
 require (
 	github.com/google/btree v1.1.3
 	github.com/google/uuid v1.6.0
-	github.com/overmindtech/sdp-go v0.92.2
+	github.com/overmindtech/sdp-go v0.93.0
 	go.opentelemetry.io/otel v1.28.0
 	go.opentelemetry.io/otel/trace v1.28.0
 	google.golang.org/protobuf v1.34.2
@@ -13,7 +13,7 @@ require (
 
 require (
 	connectrpc.com/connect v1.16.2 // indirect
-	github.com/auth0/go-jwt-middleware/v2 v2.2.1 // indirect
+	github.com/auth0/go-jwt-middleware/v2 v2.2.2 // indirect
 	github.com/getsentry/sentry-go v0.28.1 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -24,7 +24,7 @@ require (
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	go.opentelemetry.io/otel/metric v1.28.0 // indirect
 	golang.org/x/crypto v0.25.0 // indirect
-	golang.org/x/sync v0.7.0 // indirect
+	golang.org/x/sync v0.8.0 // indirect
 	golang.org/x/sys v0.22.0 // indirect
 	golang.org/x/text v0.16.0 // indirect
 	gopkg.in/go-jose/go-jose.v2 v2.6.3 // indirect
