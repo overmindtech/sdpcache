@@ -6,8 +6,8 @@ require (
 	github.com/google/btree v1.1.3
 	github.com/google/uuid v1.6.0
 	github.com/overmindtech/sdp-go v0.96.0
-	go.opentelemetry.io/otel v1.30.0
-	go.opentelemetry.io/otel/trace v1.30.0
+	go.opentelemetry.io/otel v1.31.0
+	go.opentelemetry.io/otel/trace v1.31.0
 	google.golang.org/protobuf v1.35.1
 )
 
@@ -24,7 +24,7 @@ require (
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.55.0 // indirect
-	go.opentelemetry.io/otel/metric v1.30.0 // indirect
+	go.opentelemetry.io/otel/metric v1.31.0 // indirect
 	golang.org/x/crypto v0.25.0 // indirect
 	golang.org/x/sync v0.8.0 // indirect
 	golang.org/x/sys v0.25.0 // indirect
