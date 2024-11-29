@@ -5,7 +5,7 @@ go 1.22.5
 require (
 	github.com/google/btree v1.1.3
 	github.com/google/uuid v1.6.0
-	github.com/overmindtech/sdp-go v0.101.0
+	github.com/overmindtech/sdp-go v0.101.2
 	go.opentelemetry.io/otel v1.31.0
 	go.opentelemetry.io/otel/trace v1.31.0
 	google.golang.org/protobuf v1.35.2
@@ -20,7 +20,7 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/klauspost/compress v1.17.7 // indirect
 	github.com/nats-io/nats.go v1.37.0 // indirect
-	github.com/nats-io/nkeys v0.4.7 // indirect
+	github.com/nats-io/nkeys v0.4.8 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.56.0 // indirect
