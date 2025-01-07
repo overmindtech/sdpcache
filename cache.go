@@ -2,7 +2,7 @@ package sdpcache
 
 import (
 	"context"
-	"crypto/sha1"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"strings"
@@ -58,7 +58,7 @@ func CacheKeyFromParts(srcName string, method sdp.QueryMethod, scope string, typ
 }
 
 func CacheKeyFromQuery(q *sdp.Query, srcName string) CacheKey {
-	return CacheKeyFromParts(srcName, q.Method, q.Scope, q.Type, q.Query)
+	return CacheKeyFromParts(srcName, q.GetMethod(), q.GetScope(), q.GetType(), q.GetQuery())
 }
 
 func (ck CacheKey) String() string {
@@ -143,7 +143,7 @@ type SST struct {
 
 // Hash Creates a new SST hash from a given SST
 func (s SST) Hash() SSTHash {
-	h := sha1.New()
+	h := sha256.New()
 	h.Write([]byte(s.SourceName))
 	h.Write([]byte(s.Scope))
 	h.Write([]byte(s.Type))
@@ -273,7 +273,7 @@ func (c *Cache) Lookup(ctx context.Context, srcName string, method sdp.QueryMeth
 			)
 			return false, ck, nil, nil
 		} else if errors.As(err, &qErr) {
-			if qErr.ErrorType == sdp.QueryError_NOTFOUND {
+			if qErr.GetErrorType() == sdp.QueryError_NOTFOUND {
 				span.SetAttributes(attribute.String("ovm.cache.result", "cache hit: item not found"))
 			} else {
 				span.SetAttributes(
