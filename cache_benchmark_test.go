@@ -18,11 +18,12 @@ func NewPopulatedCache(numberItems int) (*Cache, CacheKey) {
 
 	var item *sdp.Item
 	var exampleCk CacheKey
+	// nolint:gosec // simulated example data is not security relevant
 	exampleIndex := rand.Intn(numberItems)
 
 	for i := 0; i < numberItems; i++ {
 		item = GenerateRandomItem()
-		ck := CacheKeyFromQuery(item.Metadata.SourceQuery, item.Metadata.SourceName)
+		ck := CacheKeyFromQuery(item.GetMetadata().GetSourceQuery(), item.GetMetadata().GetSourceName())
 
 		if i == exampleIndex {
 			exampleCk = ck
