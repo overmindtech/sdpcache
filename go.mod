@@ -8,7 +8,7 @@ require (
 	github.com/overmindtech/sdp-go v0.104.0
 	go.opentelemetry.io/otel v1.33.0
 	go.opentelemetry.io/otel/trace v1.33.0
-	google.golang.org/protobuf v1.36.1
+	google.golang.org/protobuf v1.36.2
 )
 
 require (
