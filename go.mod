@@ -5,17 +5,17 @@ go 1.22.5
 require (
 	github.com/google/btree v1.1.3
 	github.com/google/uuid v1.6.0
-	github.com/overmindtech/sdp-go v0.104.0
+	github.com/overmindtech/sdp-go v0.104.1
 	go.opentelemetry.io/otel v1.33.0
 	go.opentelemetry.io/otel/trace v1.33.0
 	google.golang.org/protobuf v1.36.2
 )
 
 require (
-	connectrpc.com/connect v1.17.0 // indirect
+	connectrpc.com/connect v1.18.1 // indirect
 	github.com/auth0/go-jwt-middleware/v2 v2.2.2 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
-	github.com/getsentry/sentry-go v0.30.0 // indirect
+	github.com/getsentry/sentry-go v0.31.1 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/klauspost/compress v1.17.9 // indirect
